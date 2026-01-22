@@ -44,7 +44,7 @@ pub enum Statement {
     Return {
         return_value: Box<Expression>,
     },
-    /// This is to be able to expressions as statements.
+    /// This is to be able to use expressions as statements.
     Expression(Expression),
 }
 
@@ -58,7 +58,7 @@ impl Display for Statement {
                 write!(f, "return {return_value};")
             }
             Self::Expression(expression) => {
-                write!(f, "{expression};")
+                write!(f, "{expression}")
             }
         }
     }
@@ -74,6 +74,11 @@ pub enum Expression {
         operator: String,
         right: Box<Expression>,
     },
+    Infix {
+        left: Box<Expression>,
+        operator: String,
+        right: Box<Expression>,
+    },
 }
 
 impl Display for Expression {
@@ -83,6 +88,13 @@ impl Display for Expression {
             Self::Identifier(name) => write!(f, "{name}"),
             Self::Integer(value) => write!(f, "{value}"),
             Self::Prefix { operator, right } => write!(f, "({operator}{right})"),
+            Self::Infix {
+                left,
+                operator,
+                right,
+            } => {
+                write!(f, "({left} {operator} {right})")
+            }
         }
     }
 }

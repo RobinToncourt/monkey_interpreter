@@ -24,8 +24,6 @@ pub enum Token {
     NotEqual,
     GreaterThan,
     LesserThan,
-    GreaterEqual,
-    LesserEqual,
 
     // Delimiters.
     Comma,
@@ -89,8 +87,8 @@ impl Display for Token {
             Self::NotEqual => write!(f, "!="),
             Self::GreaterThan => write!(f, ">"),
             Self::LesserThan => write!(f, "<"),
-            Self::GreaterEqual => write!(f, ">="),
-            Self::LesserEqual => write!(f, "<="),
+            //Self::GreaterEqual => write!(f, ">="),
+            //Self::LesserEqual => write!(f, "<="),
             Self::Comma => write!(f, ","),
             Self::Semicolon => write!(f, ";"),
             Self::LParen => write!(f, "("),
