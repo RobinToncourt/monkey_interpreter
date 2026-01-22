@@ -1,7 +1,5 @@
 use std::{fmt::Display, vec::IntoIter};
 
-use crate::token::Token;
-
 pub struct Program {
     statements: Vec<Statement>,
 }
@@ -40,7 +38,7 @@ impl Display for Program {
 #[derive(Debug, PartialEq)]
 pub enum Statement {
     Let {
-        name: Token,
+        name: String,
         value: Box<Expression>,
     },
     Return {
@@ -70,11 +68,11 @@ impl Display for Statement {
 pub enum Expression {
     None, // TODO: remove at the end.
     /// A `Token::Ident` can produce a value when at the right of a `Token::Assign`.
-    Identifier(Token),
-    If {
-        condition: Box<Expression>,
-        consequence: Box<Statement>,
-        alternative: Box<Statement>,
+    Identifier(String),
+    Integer(i64),
+    Prefix {
+        operator: String,
+        right: Box<Expression>,
     },
 }
 
@@ -82,14 +80,9 @@ impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "NONE"),
-            Self::Identifier(token) => write!(f, "{token}"),
-            Self::If {
-                condition: _,
-                consequence: _,
-                alternative: _,
-            } => {
-                write!(f, "")
-            }
+            Self::Identifier(name) => write!(f, "{name}"),
+            Self::Integer(value) => write!(f, "{value}"),
+            Self::Prefix { operator, right } => write!(f, "({operator}{right})"),
         }
     }
 }
@@ -102,10 +95,8 @@ mod ast_tests {
     fn test_to_string() {
         let program = Program {
             statements: vec![Statement::Let {
-                name: Token::Ident("myVar".to_owned()),
-                value: Box::new(Expression::Identifier(Token::Ident(
-                    "anotherVar".to_owned(),
-                ))),
+                name: "myVar".to_owned(),
+                value: Box::new(Expression::Identifier("anotherVar".to_owned())),
             }],
         };
 

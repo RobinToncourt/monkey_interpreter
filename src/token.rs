@@ -1,6 +1,6 @@
-use std::fmt::Display;
+use std::{fmt::Display, mem::Discriminant};
 
-pub type TokenType = String;
+pub type TokenType = Discriminant<Token>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -46,6 +46,18 @@ pub enum Token {
 }
 
 impl Token {
+    pub fn empty_ident() -> Self {
+        Self::Ident(String::new())
+    }
+
+    pub fn empty_int() -> Self {
+        Self::Int(String::new())
+    }
+
+    pub fn empty_str() -> Self {
+        Self::Str(String::new())
+    }
+
     pub fn lookup_ident(ident: &str) -> Self {
         match ident {
             "let" => Self::Let,
@@ -56,40 +68,6 @@ impl Token {
             "else" => Self::Else,
             "return" => Self::Return,
             _ => Self::Ident(ident.to_string()),
-        }
-    }
-
-    pub fn get_type(&self) -> TokenType {
-        match self {
-            Self::Illegal => String::from("Illegal"),
-            Self::Ident(_) => String::from("Ident"),
-            Self::Int(_) => String::from("Int"),
-            Self::Str(_) => String::from("Str"),
-            Self::Assign => String::from("Assign"),
-            Self::Plus => String::from("Plus"),
-            Self::Minus => String::from("Minus"),
-            Self::Asterisk => String::from("Asterisk"),
-            Self::Slash => String::from("Slash"),
-            Self::Bang => String::from("Bang"),
-            Self::Equal => String::from("Equal"),
-            Self::NotEqual => String::from("NotEqual"),
-            Self::GreaterThan => String::from("GreaterThan"),
-            Self::LesserThan => String::from("LesserThan"),
-            Self::GreaterEqual => String::from("GreaterEqual"),
-            Self::LesserEqual => String::from("LesserEqual"),
-            Self::Comma => String::from("Comma"),
-            Self::Semicolon => String::from("Semicolon"),
-            Self::LParen => String::from("LParen"),
-            Self::RParen => String::from("RParen"),
-            Self::LBrace => String::from("LBrace"),
-            Self::RBrace => String::from("RBrace"),
-            Self::Function => String::from("Function"),
-            Self::Let => String::from("Let"),
-            Self::True => String::from("True"),
-            Self::False => String::from("False"),
-            Self::If => String::from("If"),
-            Self::Else => String::from("Else"),
-            Self::Return => String::from("Return"),
         }
     }
 }
