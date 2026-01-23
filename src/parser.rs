@@ -65,6 +65,18 @@ impl Parser {
                 discriminant(&Token::Minus),
                 Self::parse_prefix_expression as PrefixParseFn,
             ),
+            (
+                discriminant(&Token::True),
+                Self::parse_boolean as PrefixParseFn,
+            ),
+            (
+                discriminant(&Token::False),
+                Self::parse_boolean as PrefixParseFn,
+            ),
+            (
+                discriminant(&Token::LParen),
+                Self::parse_grouped_expression as PrefixParseFn,
+            ),
         ]
         .into();
 
@@ -218,7 +230,7 @@ impl Parser {
             self.next_token();
         }
 
-        Ok(Statement::Expression(expression?))
+        Ok(Statement::Expression(Box::new(expression?)))
     }
 
     #[log_call]
@@ -264,6 +276,20 @@ impl Parser {
             return Err(());
         };
         Ok(Expression::Identifier(name))
+    }
+
+    fn parse_boolean(&mut self) -> Result<Expression, ()> {
+        match &self.cur_token {
+            Some(Token::True) => Ok(Expression::Boolean(true)),
+            Some(Token::False) => Ok(Expression::Boolean(false)),
+            _ => {
+                self.errors.push(format!(
+                    "Not an `Token::Ident`, got '{:?}'.",
+                    self.cur_token
+                ));
+                Err(())
+            }
+        }
     }
 
     #[log_call]
@@ -316,6 +342,20 @@ impl Parser {
         })
     }
 
+    #[log_call]
+    fn parse_grouped_expression(&mut self) -> Result<Expression, ()> {
+        self.next_token();
+
+        let expression = self.parse_expression(Precedence::Lowest)?;
+
+        if !matches!(self.peek_token, Some(Token::RParen)) {
+            return Err(());
+        }
+        self.next_token();
+
+        Ok(expression)
+    }
+
     fn peek_token_precedence(&self) -> Precedence {
         self.peek_token
             .as_ref()
@@ -340,6 +380,7 @@ impl Parser {
 mod parser_tests {
     use super::*;
     use crate::ast::{Expression, Statement};
+    use std::any::Any;
 
     #[test]
     fn test_parse_let_statements() {
@@ -419,7 +460,7 @@ mod parser_tests {
             panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
         };
 
-        let Expression::Identifier(identifier) = expression else {
+        let Expression::Identifier(identifier) = *expression else {
             panic!("expression is not `Expression::Identifier`, got: '{expression:?}'.")
         };
 
@@ -442,7 +483,7 @@ mod parser_tests {
             panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
         };
 
-        let Expression::Integer(integer) = expression else {
+        let Expression::Integer(integer) = *expression else {
             panic!("expression is not `Expression::Integer`, got: '{expression:?}'.")
         };
 
@@ -450,10 +491,38 @@ mod parser_tests {
     }
 
     #[test]
-    fn test_parsing_prefix_expressions() {
-        const PREFIX_TESTS: [(&str, &str, i64); 2] = [("!5;", "!", 5), ("-15;", "-", 15)];
+    fn test_boolean_expression() {
+        const INPUT: &str = "true;";
 
-        for (input, expected_operator, expected_integer_value) in PREFIX_TESTS {
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Boolean(boolean) = *expression else {
+            panic!("expression is not `Expression::Boolean`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(boolean, true);
+    }
+
+    #[test]
+    fn test_parsing_prefix_expressions() {
+        let prefix_tests: [(&str, &str, Box<dyn Any>); 4] = [
+            ("!5;", "!", Box::new(5_i64)),
+            ("-15;", "-", Box::new(15_i64)),
+            ("!true;", "!", Box::new(true)),
+            ("!false;", "!", Box::new(false)),
+        ];
+
+        for (input, expected_operator, expected_integer_value) in prefix_tests {
             let lexer = Lexer::new(input.to_owned());
             let mut parser = Parser::new(lexer);
             let program = parser.parse_program();
@@ -466,29 +535,27 @@ mod parser_tests {
                 panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
             };
 
-            let Expression::Prefix { operator, right } = expression else {
-                panic!("expression is not `Expression::Prefix`, got: '{expression:?}'.")
-            };
-
-            assert_eq!(operator, expected_operator);
-            test_integer_literal(right, expected_integer_value);
+            test_prefix_expression(expression, expected_operator, expected_integer_value);
         }
     }
 
     #[test]
     fn test_parsing_infix_expressions() {
-        const INFIX_TESTS: [(&str, i64, &str, i64); 8] = [
-            ("5 + 5;", 5, "+", 5),
-            ("5 - 5;", 5, "-", 5),
-            ("5 * 5;", 5, "*", 5),
-            ("5 / 5;", 5, "/", 5),
-            ("5 > 5;", 5, ">", 5),
-            ("5 < 5;", 5, "<", 5),
-            ("5 == 5;", 5, "==", 5),
-            ("5 != 5;", 5, "!=", 5),
+        let infix_tests: [(&str, Box<dyn Any>, &str, Box<dyn Any>); 11] = [
+            ("5 + 5;", Box::new(5_i64), "+", Box::new(5_i64)),
+            ("5 - 5;", Box::new(5_i64), "-", Box::new(5_i64)),
+            ("5 * 5;", Box::new(5_i64), "*", Box::new(5_i64)),
+            ("5 / 5;", Box::new(5_i64), "/", Box::new(5_i64)),
+            ("5 > 5;", Box::new(5_i64), ">", Box::new(5_i64)),
+            ("5 < 5;", Box::new(5_i64), "<", Box::new(5_i64)),
+            ("5 == 5;", Box::new(5_i64), "==", Box::new(5_i64)),
+            ("5 != 5;", Box::new(5_i64), "!=", Box::new(5_i64)),
+            ("true == true", Box::new(true), "==", Box::new(true)),
+            ("true != false", Box::new(true), "!=", Box::new(false)),
+            ("false == false", Box::new(false), "==", Box::new(false)),
         ];
 
-        for (input, expected_left, expected_operator, expected_right) in INFIX_TESTS {
+        for (input, expected_left, expected_operator, expected_right) in infix_tests {
             let lexer = Lexer::new(input.to_owned());
             let mut parser = Parser::new(lexer);
             let program = parser.parse_program();
@@ -501,24 +568,13 @@ mod parser_tests {
                 panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
             };
 
-            let Expression::Infix {
-                left,
-                operator,
-                right,
-            } = expression
-            else {
-                panic!("expression is not `Expression::Infix`, got: '{expression:?}'.")
-            };
-
-            test_integer_literal(left, expected_left);
-            assert_eq!(operator, expected_operator);
-            test_integer_literal(right, expected_right);
+            test_infix_expression(expression, expected_left, expected_operator, expected_right);
         }
     }
 
     #[test]
     fn test_operator_precedence_parsing() {
-        const TEST: [(&str, &str); 13] = [
+        const TEST: [(&str, &str); 22] = [
             ("-a * b", "((-a) * b)"),
             ("!-a", "(!(-a))"),
             ("a + b + c", "((a + b) + c)"),
@@ -538,6 +594,15 @@ mod parser_tests {
                 "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             ),
+            ("true", "true"),
+            ("false", "false"),
+            ("3 > 5 == false", "((3 > 5) == false)"),
+            ("3 < 5 == true", "((3 < 5) == true)"),
+            ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            ("-(5 + 5)", "(-(5 + 5))"),
+            ("!(true == true)", "(!(true == true))"),
         ];
 
         for (input, expected) in TEST {
@@ -550,12 +615,73 @@ mod parser_tests {
         }
     }
 
+    fn test_prefix_expression(
+        expression: Box<Expression>,
+        expected_operator: &str,
+        expected_right: Box<dyn Any>,
+    ) {
+        let Expression::Prefix { operator, right } = *expression else {
+            panic!("expression is not `Expression::Prefix`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(operator, expected_operator);
+        test_literal_expression(right, expected_right);
+    }
+
+    fn test_infix_expression(
+        expression: Box<Expression>,
+        expected_left: Box<dyn Any>,
+        expected_operator: &str,
+        expected_right: Box<dyn Any>,
+    ) {
+        let Expression::Infix {
+            left,
+            operator,
+            right,
+        } = *expression
+        else {
+            panic!("expression is not `Expression::Infix`, got: '{expression:?}'.")
+        };
+
+        test_literal_expression(left, expected_left);
+        assert_eq!(operator, expected_operator);
+        test_literal_expression(right, expected_right);
+    }
+
+    fn test_literal_expression(expression: Box<Expression>, expected: Box<dyn Any>) {
+        if expected.is::<bool>() {
+            test_boolean_literal(expression, *expected.downcast_ref::<bool>().unwrap());
+        } else if expected.is::<i64>() {
+            test_integer_literal(expression, *expected.downcast_ref::<i64>().unwrap());
+        } else if expected.is::<&str>() {
+            test_identifier(expression, expected.downcast_ref::<&str>().unwrap());
+        } else {
+            panic!("expected type not handled: '{:?}'.", expected.type_id())
+        }
+    }
+
+    fn test_boolean_literal(expression: Box<Expression>, expected: bool) {
+        let Expression::Boolean(boolean) = *expression else {
+            panic!("expression is not `Expression::Boolean`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(boolean, expected);
+    }
+
     fn test_integer_literal(expression: Box<Expression>, expected_integer_value: i64) {
         let Expression::Integer(integer) = *expression else {
             panic!("expression in not `Expression::Integer`, got: '{expression:?}'.")
         };
 
         assert_eq!(integer, expected_integer_value);
+    }
+
+    fn test_identifier(expression: Box<Expression>, expected_identifier: &str) {
+        let Expression::Identifier(identifier) = *expression else {
+            panic!("expression in not `Expression::Identifier`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(identifier, expected_identifier);
     }
 
     fn check_parser_errors(errors: &[String]) {

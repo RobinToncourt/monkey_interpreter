@@ -1,10 +1,6 @@
-use std::sync::atomic::AtomicU32;
-
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemFn, parse_macro_input};
-
-static DEPTH: AtomicU32 = AtomicU32::new(0);
 
 #[proc_macro_attribute]
 pub fn log_call(_attr: TokenStream, item: TokenStream) -> TokenStream {

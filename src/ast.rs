@@ -45,7 +45,7 @@ pub enum Statement {
         return_value: Box<Expression>,
     },
     /// This is to be able to use expressions as statements.
-    Expression(Expression),
+    Expression(Box<Expression>),
 }
 
 impl Display for Statement {
@@ -70,6 +70,7 @@ pub enum Expression {
     /// A `Token::Ident` can produce a value when at the right of a `Token::Assign`.
     Identifier(String),
     Integer(i64),
+    Boolean(bool),
     Prefix {
         operator: String,
         right: Box<Expression>,
@@ -79,6 +80,11 @@ pub enum Expression {
         operator: String,
         right: Box<Expression>,
     },
+    If {
+        condition: Box<Expression>,
+        consequence: Box<Statement>,
+        alternative: Option<Box<Statement>>,
+    },
 }
 
 impl Display for Expression {
@@ -87,6 +93,7 @@ impl Display for Expression {
             Self::None => write!(f, "NONE"),
             Self::Identifier(name) => write!(f, "{name}"),
             Self::Integer(value) => write!(f, "{value}"),
+            Self::Boolean(value) => write!(f, "{value}"),
             Self::Prefix { operator, right } => write!(f, "({operator}{right})"),
             Self::Infix {
                 left,
@@ -94,6 +101,19 @@ impl Display for Expression {
                 right,
             } => {
                 write!(f, "({left} {operator} {right})")
+            }
+            Self::If {
+                condition,
+                consequence,
+                alternative,
+            } => {
+                write!(f, "if{condition} {consequence}")?;
+
+                if let Some(alternative) = alternative {
+                    write!(f, "else {alternative}")?;
+                }
+
+                Ok(())
             }
         }
     }
