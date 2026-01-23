@@ -1,5 +1,7 @@
 use std::{collections::HashMap, mem::discriminant};
 
+use log_call_macro::log_call;
+
 use crate::{
     ast::{Expression, Program, Statement},
     lexer::Lexer,
@@ -45,6 +47,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(lexer: Lexer) -> Self {
+        // TODO: move to a function that uses a match.
         let prefix_parse_fns: HashMap<TokenType, PrefixParseFn> = [
             (
                 discriminant(&Token::empty_ident()),
@@ -65,6 +68,7 @@ impl Parser {
         ]
         .into();
 
+        // TODO: move to a function that uses a match.
         let infix_parse_fns: HashMap<TokenType, InfixParseFn> = [
             (
                 discriminant(&Token::Plus),
@@ -205,6 +209,7 @@ impl Parser {
         })
     }
 
+    #[log_call]
     fn parse_expression_statement(&mut self) -> Result<Statement, ()> {
         let expression = self.parse_expression(Precedence::Lowest);
 
@@ -216,6 +221,7 @@ impl Parser {
         Ok(Statement::Expression(expression?))
     }
 
+    #[log_call]
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, ()> {
         let Some(prefix) = self
             .prefix_parse_fns
@@ -260,6 +266,7 @@ impl Parser {
         Ok(Expression::Identifier(name))
     }
 
+    #[log_call]
     fn parse_integer_literal(&mut self) -> Result<Expression, ()> {
         let Token::Int(value) = self.cur_token.clone().unwrap() else {
             self.errors
@@ -276,6 +283,7 @@ impl Parser {
         Ok(Expression::Integer(value))
     }
 
+    #[log_call]
     fn parse_prefix_expression(&mut self) -> Result<Expression, ()> {
         let token = self.cur_token.as_ref().unwrap();
         let operator = match token {
@@ -293,6 +301,7 @@ impl Parser {
         })
     }
 
+    #[log_call]
     fn parse_infix_expression(&mut self, left_expression: Expression) -> Result<Expression, ()> {
         let precedence = Precedence::from_token(self.cur_token.as_ref().unwrap());
         let operator = self.cur_token.as_ref().unwrap().to_string();
