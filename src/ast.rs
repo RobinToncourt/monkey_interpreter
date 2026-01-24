@@ -46,19 +46,21 @@ pub enum Statement {
     },
     /// This is to be able to use expressions as statements.
     Expression(Box<Expression>),
+    Block(Vec<Statement>),
 }
 
 impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Let { name, value } => {
-                write!(f, "let {name} = {value};")
-            }
-            Self::Return { return_value } => {
-                write!(f, "return {return_value};")
-            }
-            Self::Expression(expression) => {
-                write!(f, "{expression}")
+            Self::Let { name, value } => write!(f, "let {name} = {value};"),
+            Self::Return { return_value } => write!(f, "return {return_value};"),
+            Self::Expression(expression) => write!(f, "{expression}"),
+            Self::Block(statements) => {
+                let output = statements
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<String>();
+                write!(f, "{output}")
             }
         }
     }
@@ -82,8 +84,8 @@ pub enum Expression {
     },
     If {
         condition: Box<Expression>,
-        consequence: Box<Statement>,
-        alternative: Option<Box<Statement>>,
+        consequences: Box<Statement>,
+        alternatives: Option<Box<Statement>>,
     },
 }
 
@@ -104,12 +106,12 @@ impl Display for Expression {
             }
             Self::If {
                 condition,
-                consequence,
-                alternative,
+                consequences,
+                alternatives,
             } => {
-                write!(f, "if{condition} {consequence}")?;
+                write!(f, "if{condition} {consequences}")?;
 
-                if let Some(alternative) = alternative {
+                if let Some(alternative) = alternatives {
                     write!(f, "else {alternative}")?;
                 }
 

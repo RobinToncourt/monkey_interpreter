@@ -1,7 +1,5 @@
 use std::{collections::HashMap, mem::discriminant};
 
-use log_call_macro::log_call;
-
 use crate::{
     ast::{Expression, Program, Statement},
     lexer::Lexer,
@@ -76,6 +74,10 @@ impl Parser {
             (
                 discriminant(&Token::LParen),
                 Self::parse_grouped_expression as PrefixParseFn,
+            ),
+            (
+                discriminant(&Token::If),
+                Self::parse_if_expression as PrefixParseFn,
             ),
         ]
         .into();
@@ -221,7 +223,7 @@ impl Parser {
         })
     }
 
-    #[log_call]
+    //#[log_call]
     fn parse_expression_statement(&mut self) -> Result<Statement, ()> {
         let expression = self.parse_expression(Precedence::Lowest);
 
@@ -233,7 +235,7 @@ impl Parser {
         Ok(Statement::Expression(Box::new(expression?)))
     }
 
-    #[log_call]
+    //#[log_call]
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, ()> {
         let Some(prefix) = self
             .prefix_parse_fns
@@ -292,7 +294,7 @@ impl Parser {
         }
     }
 
-    #[log_call]
+    //#[log_call]
     fn parse_integer_literal(&mut self) -> Result<Expression, ()> {
         let Token::Int(value) = self.cur_token.clone().unwrap() else {
             self.errors
@@ -309,7 +311,7 @@ impl Parser {
         Ok(Expression::Integer(value))
     }
 
-    #[log_call]
+    //#[log_call]
     fn parse_prefix_expression(&mut self) -> Result<Expression, ()> {
         let token = self.cur_token.as_ref().unwrap();
         let operator = match token {
@@ -327,7 +329,7 @@ impl Parser {
         })
     }
 
-    #[log_call]
+    //#[log_call]
     fn parse_infix_expression(&mut self, left_expression: Expression) -> Result<Expression, ()> {
         let precedence = Precedence::from_token(self.cur_token.as_ref().unwrap());
         let operator = self.cur_token.as_ref().unwrap().to_string();
@@ -342,24 +344,94 @@ impl Parser {
         })
     }
 
-    #[log_call]
+    //#[log_call]
     fn parse_grouped_expression(&mut self) -> Result<Expression, ()> {
         self.next_token();
 
         let expression = self.parse_expression(Precedence::Lowest)?;
 
-        if !matches!(self.peek_token, Some(Token::RParen)) {
+        if !self.expect_peek(&Token::RParen) {
             return Err(());
         }
-        self.next_token();
 
         Ok(expression)
+    }
+
+    //#[log_call]
+    fn parse_if_expression(&mut self) -> Result<Expression, ()> {
+        if !self.expect_peek(&Token::LParen) {
+            return Err(());
+        }
+
+        self.next_token();
+        let condition = self.parse_expression(Precedence::Lowest);
+
+        if !self.expect_peek(&Token::RParen) {
+            return Err(());
+        }
+
+        if !self.expect_peek(&Token::LBrace) {
+            return Err(());
+        }
+
+        let consequences = self.parse_block_statement();
+
+        let mut alternatives = Option::<Box<Statement>>::None;
+        if self.peek_token == Some(Token::Else) {
+            self.next_token();
+
+            if !self.expect_peek(&Token::LBrace) {
+                return Err(());
+            }
+
+            alternatives = Some(Box::new(self.parse_block_statement()?));
+        }
+
+        Ok(Expression::If {
+            condition: Box::new(condition?),
+            consequences: Box::new(consequences?),
+            alternatives,
+        })
+    }
+
+    //#[log_call]
+    #[allow(clippy::unnecessary_wraps)] // TODO: remove once it returns expression.
+    fn parse_block_statement(&mut self) -> Result<Statement, ()> {
+        let mut statements = Vec::<Statement>::new();
+
+        self.next_token();
+
+        while let Some(token) = self.cur_token.as_ref()
+            && !matches!(token, Token::RBrace)
+        {
+            let statement = self.parse_statement();
+
+            if let Ok(statement) = statement {
+                statements.push(statement);
+            }
+
+            self.next_token();
+        }
+
+        Ok(Statement::Block(statements))
     }
 
     fn peek_token_precedence(&self) -> Precedence {
         self.peek_token
             .as_ref()
             .map_or(Precedence::Lowest, Precedence::from_token)
+    }
+
+    fn expect_peek(&mut self, token: &Token) -> bool {
+        if let Some(peek) = self.peek_token.as_ref()
+            && discriminant(peek) == discriminant(token)
+        {
+            self.next_token();
+            true
+        } else {
+            self.peek_errors(&token.to_string());
+            false
+        }
     }
 
     fn peek_errors(&mut self, expected_token: &str) {
@@ -511,6 +583,109 @@ mod parser_tests {
         };
 
         assert_eq!(boolean, true);
+    }
+
+    #[test]
+    fn test_if_expression() {
+        const INPUT: &str = "if (x < y) { x }";
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::If {
+            condition,
+            consequences,
+            alternatives,
+        } = *expression
+        else {
+            panic!("expression is not `Expression::If`, got: '{expression:?}'.")
+        };
+
+        test_infix_expression(condition, Box::new("x"), "<", Box::new("y"));
+
+        let Statement::Block(consequences) = *consequences else {
+            panic!("consequences are not `Statement::Block`, got: '{consequences:?}.")
+        };
+
+        assert_eq!(consequences.len(), 1);
+
+        let consequence = consequences.into_iter().next().unwrap();
+
+        let Statement::Expression(expression) = consequence else {
+            panic!("consequence is not `Statement::Expression`, got: '{consequence:?}'.")
+        };
+
+        test_identifier(expression, "x");
+
+        assert!(alternatives.is_none());
+    }
+
+    #[test]
+    fn test_if_else_expression() {
+        const INPUT: &str = "if (x < y) { x } else { y }";
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::If {
+            condition,
+            consequences,
+            alternatives,
+        } = *expression
+        else {
+            panic!("expression is not `Expression::If`, got: '{expression:?}'.")
+        };
+
+        test_infix_expression(condition, Box::new("x"), "<", Box::new("y"));
+
+        let Statement::Block(consequences) = *consequences else {
+            panic!("consequences are not `Statement::Block`, got: '{consequences:?}.")
+        };
+
+        assert_eq!(consequences.len(), 1);
+
+        let consequence = consequences.into_iter().next().unwrap();
+
+        let Statement::Expression(expression) = consequence else {
+            panic!("consequence is not `Statement::Expression`, got: '{consequence:?}'.")
+        };
+
+        test_identifier(expression, "x");
+
+        assert!(alternatives.is_some());
+        let alternatives = alternatives.unwrap();
+
+        let Statement::Block(alternatives) = *alternatives else {
+            panic!("alternatives are not `Statement::Block`, got: '{alternatives:?}.")
+        };
+
+        assert_eq!(alternatives.len(), 1);
+
+        let alternatives = alternatives.into_iter().next().unwrap();
+
+        let Statement::Expression(expression) = alternatives else {
+            panic!("alternatives is not `Statement::Expression`, got: '{alternatives:?}.")
+        };
+
+        test_identifier(expression, "y");
     }
 
     #[test]
