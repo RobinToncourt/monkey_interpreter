@@ -91,6 +91,10 @@ pub enum Expression {
         parameters: Vec<Expression>,
         body: Box<Statement>,
     },
+    Call {
+        function: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
 }
 
 impl Display for Expression {
@@ -128,6 +132,17 @@ impl Display for Expression {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "fn({parameters}){body}")
+            }
+            Self::Call {
+                function,
+                arguments,
+            } => {
+                let args = arguments
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "{function}({args})")
             }
         }
     }

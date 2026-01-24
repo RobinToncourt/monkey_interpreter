@@ -7,7 +7,7 @@ use crate::{
 };
 
 type PrefixParseFn = fn(parser: &mut Parser) -> Result<Expression, ()>;
-type InfixParseFn = fn(parser: &mut Parser, left_side: Expression) -> Result<Expression, ()>;
+type InfixParseFn = fn(parser: &mut Parser, expression: Expression) -> Result<Expression, ()>;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 enum Precedence {
@@ -27,6 +27,7 @@ impl Precedence {
             Token::LesserThan | Token::GreaterThan => Self::LessGreater,
             Token::Plus | Token::Minus => Self::Sum,
             Token::Asterisk | Token::Slash => Self::Product,
+            Token::LParen => Self::Call,
             _ => Self::Lowest,
         }
     }
@@ -119,6 +120,10 @@ impl Parser {
             (
                 discriminant(&Token::GreaterThan),
                 Self::parse_infix_expression as InfixParseFn,
+            ),
+            (
+                discriminant(&Token::LParen),
+                Self::parse_call_expression as InfixParseFn,
             ),
         ]
         .into();
@@ -251,7 +256,7 @@ impl Parser {
 
         let mut left_expression = prefix(self)?;
 
-        while !matches!(self.peek_token, Some(Token::Semicolon))
+        while self.peek_token != Some(Token::Semicolon)
             && precedence < self.peek_token_precedence()
         {
             let Some(peek_token) = self.peek_token.as_ref().map(discriminant) else {
@@ -352,13 +357,13 @@ impl Parser {
     fn parse_grouped_expression(&mut self) -> Result<Expression, ()> {
         self.next_token();
 
-        let expression = self.parse_expression(Precedence::Lowest)?;
+        let expression = self.parse_expression(Precedence::Lowest);
 
         if !self.expect_peek(&Token::RParen) {
             return Err(());
         }
 
-        Ok(expression)
+        Ok(expression?)
     }
 
     //#[log_call]
@@ -469,6 +474,38 @@ impl Parser {
         }
 
         Ok(parameters)
+    }
+
+    fn parse_call_expression(&mut self, function: Expression) -> Result<Expression, ()> {
+        let arguments = self.parse_call_arguments()?;
+        Ok(Expression::Call {
+            function: Box::new(function),
+            arguments,
+        })
+    }
+
+    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, ()> {
+        let mut arguments = Vec::<Result<Expression, ()>>::new();
+
+        if self.peek_token == Some(Token::RParen) {
+            self.next_token();
+            return Ok(arguments.into_iter().flatten().collect());
+        }
+
+        self.next_token();
+        arguments.push(self.parse_expression(Precedence::Lowest));
+
+        if self.peek_token == Some(Token::Comma) {
+            self.next_token();
+            self.next_token();
+            arguments.push(self.parse_expression(Precedence::Lowest));
+        }
+
+        if !self.expect_peek(&Token::RParen) {
+            return Err(());
+        }
+
+        Ok(arguments.into_iter().flatten().collect())
     }
 
     fn peek_token_precedence(&self) -> Precedence {
@@ -818,6 +855,50 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_call_expression_parsing() {
+        const INPUT: &str = "add(1, 2 * 3, 4 + 5);";
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Call {
+            function,
+            arguments,
+        } = *expression
+        else {
+            panic!("expression is not `Expression::Call`, got: '{expression:?}'.")
+        };
+
+        test_identifier(function, "add");
+
+        assert_eq!(arguments.len(), 3);
+
+        let mut arguments = arguments.into_iter();
+        test_literal_expression(Box::new(arguments.next().unwrap()), Box::new(1));
+        test_infix_expression(
+            Box::new(arguments.next().unwrap()),
+            Box::new(2),
+            "*",
+            Box::new(3),
+        );
+        test_infix_expression(
+            Box::new(arguments.next().unwrap()),
+            Box::new(4),
+            "+",
+            Box::new(5),
+        );
+    }
+
+    #[test]
     fn test_parsing_prefix_expressions() {
         let prefix_tests: [(&str, &str, Box<dyn Any>); 4] = [
             ("!5;", "!", Box::new(5_i64)),
@@ -878,7 +959,7 @@ mod parser_tests {
 
     #[test]
     fn test_operator_precedence_parsing() {
-        const TEST: [(&str, &str); 22] = [
+        const TEST: [(&str, &str); 25] = [
             ("-a * b", "((-a) * b)"),
             ("!-a", "(!(-a))"),
             ("a + b + c", "((a + b) + c)"),
@@ -907,6 +988,9 @@ mod parser_tests {
             ("2 / (5 + 5)", "(2 / (5 + 5))"),
             ("-(5 + 5)", "(-(5 + 5))"),
             ("!(true == true)", "(!(true == true))"),
+            ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
+            ("add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))", "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))"),
+            ("add(a + b + c * d / f + g)", "add((((a + b) + ((c * d) / f)) + g))"),
         ];
 
         for (input, expected) in TEST {
