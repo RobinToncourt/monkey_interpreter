@@ -79,6 +79,10 @@ impl Parser {
                 discriminant(&Token::If),
                 Self::parse_if_expression as PrefixParseFn,
             ),
+            (
+                discriminant(&Token::Function),
+                Self::parse_function_literal as PrefixParseFn,
+            ),
         ]
         .into();
 
@@ -416,12 +420,65 @@ impl Parser {
         Ok(Statement::Block(statements))
     }
 
+    fn parse_function_literal(&mut self) -> Result<Expression, ()> {
+        if !self.expect_peek(&Token::LParen) {
+            return Err(());
+        }
+
+        let parameters = self.parse_function_parameters();
+
+        if !self.expect_peek(&Token::LBrace) {
+            return Err(());
+        }
+
+        let body = self.parse_block_statement()?;
+
+        Ok(Expression::Function {
+            parameters: parameters?,
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_function_parameters(&mut self) -> Result<Vec<Expression>, ()> {
+        let mut parameters = Vec::<Expression>::new();
+
+        if self.peek_token == Some(Token::RParen) {
+            self.next_token();
+            return Ok(parameters);
+        }
+
+        self.next_token();
+
+        if let Some(Token::Ident(value)) = self.cur_token.take() {
+            let ident = Expression::Identifier(value);
+            parameters.push(ident);
+        }
+
+        while self.peek_token == Some(Token::Comma) {
+            self.next_token();
+            self.next_token();
+
+            if let Some(Token::Ident(value)) = self.cur_token.take() {
+                let ident = Expression::Identifier(value);
+                parameters.push(ident);
+            }
+        }
+
+        if !self.expect_peek(&Token::RParen) {
+            return Err(());
+        }
+
+        Ok(parameters)
+    }
+
     fn peek_token_precedence(&self) -> Precedence {
         self.peek_token
             .as_ref()
             .map_or(Precedence::Lowest, Precedence::from_token)
     }
 
+    /// Returns if the `Self::peek_token` is `token`,
+    /// advances token if true.
     fn expect_peek(&mut self, token: &Token) -> bool {
         if let Some(peek) = self.peek_token.as_ref()
             && discriminant(peek) == discriminant(token)
@@ -686,6 +743,78 @@ mod parser_tests {
         };
 
         test_identifier(expression, "y");
+    }
+
+    #[test]
+    fn test_function_literal() {
+        const INPUT: &str = "fn (x, y) { x + y }";
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Function { parameters, body } = *expression else {
+            panic!("expression is not `Expression::Function`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(parameters.len(), 2);
+
+        let mut parameters = parameters.into_iter();
+        test_literal_expression(Box::new(parameters.next().unwrap()), Box::new("x"));
+        test_literal_expression(Box::new(parameters.next().unwrap()), Box::new("y"));
+
+        let Statement::Block(body) = *body else {
+            panic!("body is not `Statement::Block`, got: '{body:?}'.")
+        };
+
+        assert_eq!(body.len(), 1);
+
+        let mut body = body.into_iter();
+        let Statement::Expression(expression) = body.next().unwrap() else {
+            panic!("body[0] is not `Statement::Expression`, got: '{body:?}'.")
+        };
+
+        test_infix_expression(expression, Box::new("x"), "+", Box::new("y"));
+    }
+
+    #[test]
+    fn test_function_parameters_parsing() {
+        const INPUT: [(&str, &[&str]); 3] = [
+            ("fn () {}", &[]),
+            ("fn (x) {}", &["x"]),
+            ("fn (x, y, z) {}", &["x", "y", "z"]),
+        ];
+
+        for (input, expected_parameters) in INPUT {
+            let lexer = Lexer::new(input.to_owned());
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse_program();
+            check_parser_errors(parser.get_errors());
+
+            let statement = program.into_iter().next().unwrap();
+            let Statement::Expression(expression) = statement else {
+                panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+            };
+
+            let Expression::Function { parameters, body } = *expression else {
+                panic!("expression is not `Expression::Function`, got: '{expression:?}'.")
+            };
+
+            assert_eq!(parameters.len(), expected_parameters.len());
+
+            let zip = parameters.into_iter().zip(expected_parameters);
+            for (parameter, expected_parameter) in zip.into_iter() {
+                test_literal_expression(Box::new(parameter), Box::new(*expected_parameter));
+            }
+        }
     }
 
     #[test]

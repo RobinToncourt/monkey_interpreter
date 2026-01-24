@@ -87,6 +87,10 @@ pub enum Expression {
         consequences: Box<Statement>,
         alternatives: Option<Box<Statement>>,
     },
+    Function {
+        parameters: Vec<Expression>,
+        body: Box<Statement>,
+    },
 }
 
 impl Display for Expression {
@@ -116,6 +120,14 @@ impl Display for Expression {
                 }
 
                 Ok(())
+            }
+            Self::Function { parameters, body } => {
+                let parameters = parameters
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "fn({parameters}){body}")
             }
         }
     }
