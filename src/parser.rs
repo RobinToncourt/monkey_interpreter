@@ -144,13 +144,8 @@ impl Parser {
         parser
     }
 
-    fn get_errors(&self) -> &[String] {
+    pub fn get_errors(&self) -> &[String] {
         &self.errors
-    }
-
-    fn next_token(&mut self) {
-        self.cur_token = self.peek_token.take();
-        self.peek_token = self.lexer.next();
     }
 
     pub fn parse_program(&mut self) -> Program {
@@ -403,6 +398,7 @@ impl Parser {
         {
             let statement = self.parse_statement();
 
+            // TODO: do not ignore `Result::Err`.
             if let Ok(statement) = statement {
                 statements.push(statement);
             }
@@ -494,6 +490,11 @@ impl Parser {
         }
 
         Ok(arguments)
+    }
+
+    fn next_token(&mut self) {
+        self.cur_token = self.peek_token.take();
+        self.peek_token = self.lexer.next();
     }
 
     fn peek_token_precedence(&self) -> Precedence {

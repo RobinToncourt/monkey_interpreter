@@ -1,8 +1,20 @@
 use std::io::{BufReader, Read, Write};
 
-use crate::lexer;
+use crate::{lexer, parser};
 
 const PROMPT: &str = ">> ";
+const MONKEY_FACE: &str = r#"            __,__
+   .--.  .-"     "-.  .--.
+  / .. \/  .-. .-.  \/ .. \
+ | |  '|  /   Y   \  |'  | |
+ | \   \  \ 0 | 0 /  /   / |
+  \ '- ,\.-"""""""-./, -' /
+   ''-' /_   ^ ^   _\ '-''
+       |  \._   _./  |
+       \   \ '~' /   /
+        '._ '-=-' _.'
+           '-----'
+"#;
 
 pub fn start<IN, OUT>(mut input: IN, mut output: OUT)
 where
@@ -24,11 +36,16 @@ where
         }
 
         let lexer = lexer::Lexer::new(buffer.to_owned());
-        for token in lexer {
-            output
-                .write_all(&format!("{token:?}\n").into_bytes())
-                .unwrap();
+        let mut parser = parser::Parser::new(lexer);
+        let program = parser.parse_program();
+
+        if !parser.get_errors().is_empty() {
+            print_parser_errors(&mut output, parser.get_errors());
+            continue;
         }
+
+        output.write_all(format!("{program}\n").as_bytes()).unwrap();
+        output.flush().unwrap();
     }
 }
 
@@ -49,4 +66,24 @@ where
     }
 
     String::from_utf8(buffer).unwrap()
+}
+
+fn print_parser_errors<OUT>(output: &mut OUT, errors: &[String])
+where
+    OUT: Write,
+{
+    output
+        .write_all(format!("{MONKEY_FACE}\n").as_bytes())
+        .unwrap();
+    output
+        .write_all("Whoops! We ran in some monkey business here!\n".as_bytes())
+        .unwrap();
+    output.write_all(" parser errors:\n".as_bytes()).unwrap();
+
+    for error in errors {
+        output.write_all(b"\t").unwrap();
+        output.write_all(error.as_bytes()).unwrap();
+        output.write_all(b"\n").unwrap();
+        output.flush().unwrap();
+    }
 }
