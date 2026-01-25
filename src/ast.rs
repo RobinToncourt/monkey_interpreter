@@ -68,7 +68,6 @@ impl Display for Statement {
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
-    None, // TODO: remove at the end.
     /// A `Token::Ident` can produce a value when at the right of a `Token::Assign`.
     Identifier(String),
     Integer(i64),
@@ -100,7 +99,6 @@ pub enum Expression {
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::None => write!(f, "NONE"),
             Self::Identifier(name) => write!(f, "{name}"),
             Self::Integer(value) => write!(f, "{value}"),
             Self::Boolean(value) => write!(f, "{value}"),

@@ -181,54 +181,43 @@ impl Parser {
     }
 
     fn parse_let_statement(&mut self) -> Result<Statement, ()> {
-        if !matches!(self.peek_token, Some(Token::Ident(_))) {
-            self.peek_errors("Token::Ident");
+        if !self.expect_peek(&Token::empty_ident()) {
             return Err(());
         }
-        self.next_token();
 
         let Token::Ident(name) = self.cur_token.clone().unwrap() else {
             panic!("Not an `Token::Ident`.")
         };
 
-        if !matches!(self.peek_token, Some(Token::Assign)) {
-            self.peek_errors("Token::Assign");
+        if !self.expect_peek(&Token::Assign) {
             return Err(());
         }
+
         self.next_token();
 
-        // Skip to end of expression.
-        while !matches!(self.peek_token, Some(Token::Semicolon)) {
-            self.next_token();
-        }
+        let value = self.parse_expression(Precedence::Lowest);
 
-        // Skip `Token::Semicolon`.
-        while matches!(self.peek_token, Some(Token::Semicolon)) {
+        if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
         }
 
         Ok(Statement::Let {
             name,
-            value: Box::new(Expression::None),
+            value: Box::new(value?),
         })
     }
 
-    #[allow(clippy::unnecessary_wraps)] // TODO: remove once it returns expression.
     fn parse_return_statement(&mut self) -> Result<Statement, ()> {
         self.next_token();
 
-        // Skip to end of expression.
-        while !matches!(self.peek_token, Some(Token::Semicolon)) {
-            self.next_token();
-        }
+        let return_value = self.parse_expression(Precedence::Lowest);
 
-        // Skip `Token::Semicolon`.
-        while matches!(self.peek_token, Some(Token::Semicolon)) {
+        if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
         }
 
         Ok(Statement::Return {
-            return_value: Box::new(Expression::None),
+            return_value: Box::new(return_value?),
         })
     }
 
@@ -256,8 +245,7 @@ impl Parser {
 
         let mut left_expression = prefix(self)?;
 
-        while self.peek_token != Some(Token::Semicolon)
-            && precedence < self.peek_token_precedence()
+        while self.peek_token != Some(Token::Semicolon) && precedence < self.peek_token_precedence()
         {
             let Some(peek_token) = self.peek_token.as_ref().map(discriminant) else {
                 return Ok(left_expression);
@@ -363,7 +351,7 @@ impl Parser {
             return Err(());
         }
 
-        Ok(expression?)
+        expression
     }
 
     //#[log_call]
@@ -477,35 +465,35 @@ impl Parser {
     }
 
     fn parse_call_expression(&mut self, function: Expression) -> Result<Expression, ()> {
-        let arguments = self.parse_call_arguments()?;
+        let arguments = self.parse_call_arguments();
         Ok(Expression::Call {
             function: Box::new(function),
-            arguments,
+            arguments: arguments?,
         })
     }
 
     fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, ()> {
-        let mut arguments = Vec::<Result<Expression, ()>>::new();
+        let mut arguments = Vec::<Expression>::new();
 
         if self.peek_token == Some(Token::RParen) {
             self.next_token();
-            return Ok(arguments.into_iter().flatten().collect());
+            return Ok(arguments);
         }
 
         self.next_token();
-        arguments.push(self.parse_expression(Precedence::Lowest));
+        arguments.push(self.parse_expression(Precedence::Lowest)?);
 
-        if self.peek_token == Some(Token::Comma) {
+        while self.peek_token == Some(Token::Comma) {
             self.next_token();
             self.next_token();
-            arguments.push(self.parse_expression(Precedence::Lowest));
+            arguments.push(self.parse_expression(Precedence::Lowest)?);
         }
 
         if !self.expect_peek(&Token::RParen) {
             return Err(());
         }
 
-        Ok(arguments.into_iter().flatten().collect())
+        Ok(arguments)
     }
 
     fn peek_token_precedence(&self) -> Precedence {
@@ -557,19 +545,53 @@ mod parser_tests {
         let expected_statements = vec![
             Statement::Let {
                 name: "x".to_owned(),
-                value: Box::new(Expression::None),
+                value: Box::new(Expression::Integer(5)),
             },
             Statement::Let {
                 name: "y".to_owned(),
-                value: Box::new(Expression::None),
+                value: Box::new(Expression::Integer(10)),
             },
             Statement::Let {
                 name: "foo_bar".to_owned(),
-                value: Box::new(Expression::None),
+                value: Box::new(Expression::Integer(838383)),
             },
         ];
 
         test_parser(INPUT.to_owned(), expected_statements);
+    }
+
+    #[test]
+    fn test_parse_let_statements_2() {
+        let tests: [(&str, &str, Box<dyn Any>); 3] = [
+            ("let x = 5;", "x", Box::new(5_i64)),
+            ("let y = true;", "y", Box::new(true)),
+            ("let foobar = y;", "foobar", Box::new("y")),
+        ];
+
+        for (input, expected_identifier, expected_value) in tests {
+            let lexer = Lexer::new(input.to_owned());
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse_program();
+            check_parser_errors(parser.get_errors());
+
+            assert_eq!(program.statements_len(), 1);
+
+            let statement = program.into_iter().next().unwrap();
+            test_let_statements(statement, expected_identifier, expected_value);
+        }
+    }
+
+    fn test_let_statements(
+        statement: Statement,
+        expected_identifier: &str,
+        expected_value: Box<dyn Any>,
+    ) {
+        let Statement::Let { name, value } = statement else {
+            panic!("statement in not `Statement::Let`, got: '{statement:?}'.")
+        };
+
+        assert_eq!(name, expected_identifier);
+        test_literal_expression(value, expected_value);
     }
 
     #[test]
@@ -580,13 +602,13 @@ mod parser_tests {
 
         let expected_statements = vec![
             Statement::Return {
-                return_value: Box::new(Expression::None),
+                return_value: Box::new(Expression::Integer(5)),
             },
             Statement::Return {
-                return_value: Box::new(Expression::None),
+                return_value: Box::new(Expression::Integer(10)),
             },
             Statement::Return {
-                return_value: Box::new(Expression::None),
+                return_value: Box::new(Expression::Integer(993322)),
             },
         ];
 
@@ -841,7 +863,11 @@ mod parser_tests {
                 panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
             };
 
-            let Expression::Function { parameters, body } = *expression else {
+            let Expression::Function {
+                parameters,
+                body: _,
+            } = *expression
+            else {
                 panic!("expression is not `Expression::Function`, got: '{expression:?}'.")
             };
 
@@ -883,18 +909,18 @@ mod parser_tests {
         assert_eq!(arguments.len(), 3);
 
         let mut arguments = arguments.into_iter();
-        test_literal_expression(Box::new(arguments.next().unwrap()), Box::new(1));
+        test_literal_expression(Box::new(arguments.next().unwrap()), Box::new(1_i64));
         test_infix_expression(
             Box::new(arguments.next().unwrap()),
-            Box::new(2),
+            Box::new(2_i64),
             "*",
-            Box::new(3),
+            Box::new(3_i64),
         );
         test_infix_expression(
             Box::new(arguments.next().unwrap()),
-            Box::new(4),
+            Box::new(4_i64),
             "+",
-            Box::new(5),
+            Box::new(5_i64),
         );
     }
 
@@ -989,8 +1015,14 @@ mod parser_tests {
             ("-(5 + 5)", "(-(5 + 5))"),
             ("!(true == true)", "(!(true == true))"),
             ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
-            ("add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))", "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))"),
-            ("add(a + b + c * d / f + g)", "add((((a + b) + ((c * d) / f)) + g))"),
+            (
+                "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+                "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            ),
+            (
+                "add(a + b + c * d / f + g)",
+                "add((((a + b) + ((c * d) / f)) + g))",
+            ),
         ];
 
         for (input, expected) in TEST {
@@ -1085,5 +1117,16 @@ mod parser_tests {
         assert!(Precedence::Sum < Precedence::Product);
         assert!(Precedence::Product < Precedence::Prefix);
         assert!(Precedence::Prefix < Precedence::Call);
+    }
+
+    #[test]
+    fn test_precedence_from_token_order() {
+        assert!(Precedence::from_token(&Token::Equal) < Precedence::from_token(&Token::LParen));
+        assert!(
+            Precedence::from_token(&Token::LesserThan) < Precedence::from_token(&Token::LParen)
+        );
+        assert!(Precedence::from_token(&Token::Plus) < Precedence::from_token(&Token::LParen));
+        assert!(Precedence::from_token(&Token::Asterisk) < Precedence::from_token(&Token::LParen));
+        assert!(Precedence::from_token(&Token::Slash) < Precedence::from_token(&Token::LParen));
     }
 }
