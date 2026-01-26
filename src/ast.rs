@@ -1,5 +1,29 @@
 use std::{fmt::Display, vec::IntoIter};
 
+pub enum Node {
+    Program(Program),
+    Statement(Statement),
+    Expression(Expression),
+}
+
+impl From<Program> for Node {
+    fn from(program: Program) -> Self {
+        Node::Program(program)
+    }
+}
+
+impl From<Statement> for Node {
+    fn from(statement: Statement) -> Self {
+        Node::Statement(statement)
+    }
+}
+
+impl From<Expression> for Node {
+    fn from(expression: Expression) -> Self {
+        Node::Expression(expression)
+    }
+}
+
 pub struct Program {
     statements: Vec<Statement>,
 }
@@ -15,6 +39,10 @@ impl Program {
 
     pub fn add_statement(&mut self, statement: Statement) {
         self.statements.push(statement);
+    }
+
+    pub fn get_statements(&self) -> &Vec<Statement> {
+        &self.statements
     }
 
     pub fn into_iter(self) -> IntoIter<Statement> {

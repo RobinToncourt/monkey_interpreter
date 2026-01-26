@@ -1,6 +1,6 @@
 use std::io::{BufReader, Read, Write};
 
-use crate::{lexer, parser};
+use crate::{evaluator, lexer, parser};
 
 const PROMPT: &str = ">> ";
 const MONKEY_FACE: &str = r#"            __,__
@@ -44,12 +44,12 @@ where
             continue;
         }
 
-        output.write_all(format!("{program}\n").as_bytes()).unwrap();
-        output.flush().unwrap();
+        let evaluated = evaluator::eval(program);
+        println!("{}", evaluated.inspect());
     }
 }
 
-// Read `input` until a new line char is encountered.
+/// Read `input` until a new line char is encountered.
 fn read_line<IN>(input: &mut IN) -> String
 where
     IN: Read,
