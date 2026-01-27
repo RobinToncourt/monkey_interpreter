@@ -8,6 +8,7 @@ mod object;
 mod parser;
 mod repl;
 mod token;
+mod environment;
 
 fn main() {
     println!("Hello! This is the Monkey programming language!");

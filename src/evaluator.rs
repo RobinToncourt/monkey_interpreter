@@ -349,7 +349,7 @@ mod evaluator_tests {
 
     #[test]
     fn test_error_handling() {
-        let tests: [(&str, &str); 7] = [
+        let tests: [(&str, &str); 8] = [
             ("5 + true;", "type mismatch: Integer + Boolean."),
             ("5 + true; 5;", "type mismatch: Integer + Boolean"),
             ("-true", "unknown operator: -Boolean"),
@@ -369,12 +369,30 @@ mod evaluator_tests {
                 }",
                 "unknown operator: Boolean + Boolean",
             ),
+            ("foobar", "identifier not found: foobar"),
         ];
 
         let mut all_tests_passed = true;
         for (input, expected) in tests {
             let evaluated = test_eval(input);
             all_tests_passed = test_error_object(evaluated, expected);
+        }
+        assert!(all_tests_passed);
+    }
+
+    #[test]
+    fn test_let_statements() {
+        let test: [(&str, i64); 4] = [
+            ("let a = 5; a;", 5),
+            ("let a = 5 * 5; a;", 25),
+            ("let a = 5; let b = a; b;", 5),
+            ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
+        ];
+
+        let mut all_tests_passed = true;
+        for (input, expected) in test {
+            let evaluated = test_eval(input);
+            all_tests_passed = test_integer_object(evaluated, expected);
         }
         assert!(all_tests_passed);
     }
@@ -386,12 +404,17 @@ mod evaluator_tests {
         eval(program)
     }
 
-    fn test_integer_object(object: Object, expected_int: i64) {
+    fn test_integer_object(object: Object, expected_int: i64) -> bool {
         let Object::Integer(integer) = object else {
-            panic!("object is not `Object::Integer`, got: '{object:?}'.")
+            println!("object is not `Object::Integer`, got: '{object:?}'.");
+            return false;
         };
 
-        assert_eq!(integer, expected_int);
+        let result = integer == expected_int;
+        if !result {
+            println!("{integer} != {expected_int}");
+        }
+        result
     }
 
     fn test_boolean_object(object: Object, expected_bool: bool) {
@@ -414,7 +437,7 @@ mod evaluator_tests {
 
         let result = error == expected_error.to_owned();
         if !result {
-            println!("{error} != {expected_error}")
+            println!("{error} != {expected_error}");
         }
         result
     }
