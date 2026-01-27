@@ -13,13 +13,9 @@ where
 }
 
 fn eval_program(program: &Program) -> Object {
-    eval_statements(program.get_statements())
-}
-
-fn eval_statements(statements: &[Statement]) -> Object {
     let mut result = Object::Null;
 
-    for statement in statements {
+    for statement in program.get_statements() {
         result = eval_statement(statement);
 
         if let Object::ReturnValue(return_value) = result {
@@ -38,7 +34,7 @@ fn eval_statement(statement: &Statement) -> Object {
             Object::ReturnValue(Box::new(return_value))
         }
         Statement::Expression(expression) => eval_expression(expression),
-        Statement::Block(statements) => eval_statements(statements),
+        Statement::Block(statements) => eval_block_statement(statements),
     }
 }
 
@@ -66,6 +62,20 @@ fn eval_expression(expression: &Expression) -> Object {
         } => eval_if_expression(condition, consequences, alternatives.as_deref()),
         _ => Object::Null,
     }
+}
+
+fn eval_block_statement(statements: &[Statement]) -> Object {
+    let mut result = Object::Null;
+
+    for statement in statements {
+        result = eval_statement(statement);
+
+        if matches!(result, Object::ReturnValue(_)) {
+            return result;
+        }
+    }
+
+    result
 }
 
 fn eval_prefix_expression(operator: &str, right: &Object) -> Object {
