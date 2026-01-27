@@ -21,6 +21,10 @@ fn eval_statements(statements: &[Statement]) -> Object {
 
     for statement in statements {
         result = eval_statement(statement);
+
+        if let Object::ReturnValue(return_value) = result {
+            return *return_value;
+        }
     }
 
     result
@@ -29,7 +33,10 @@ fn eval_statements(statements: &[Statement]) -> Object {
 fn eval_statement(statement: &Statement) -> Object {
     match statement {
         Statement::Let { name: _, value: _ } => Object::Null,
-        Statement::Return { return_value } => eval_expression(return_value),
+        Statement::Return { return_value } => {
+            let return_value = eval_expression(return_value);
+            Object::ReturnValue(Box::new(return_value))
+        }
         Statement::Expression(expression) => eval_expression(expression),
         Statement::Block(statements) => eval_statements(statements),
     }
@@ -52,6 +59,11 @@ fn eval_expression(expression: &Expression) -> Object {
             let right = eval_expression(right);
             eval_infix_expression(&left, operator, &right)
         }
+        Expression::If {
+            condition,
+            consequences,
+            alternatives,
+        } => eval_if_expression(condition, consequences, alternatives.as_deref()),
         _ => Object::Null,
     }
 }
@@ -74,6 +86,29 @@ fn eval_infix_expression(left: &Object, operator: &str, right: &Object) -> Objec
         }
         (Object::Null, Object::Null) => eval_null_infix_expression(operator),
         _ => Object::Null,
+    }
+}
+
+fn eval_if_expression(
+    condition: &Expression,
+    consequences: &Statement,
+    alternatives: Option<&Statement>,
+) -> Object {
+    let condition = eval_expression(condition);
+
+    if is_truthy(&condition) {
+        eval_statement(consequences)
+    } else {
+        alternatives.map_or(Object::Null, eval_statement)
+    }
+}
+
+fn is_truthy(object: &Object) -> bool {
+    match object {
+        Object::Boolean(b) => *b,
+        Object::Integer(i) => *i != 0,
+        Object::Null => false,
+        Object::ReturnValue(_) => todo!(), // is_truthy(value),
     }
 }
 
@@ -112,6 +147,7 @@ fn eval_bang_operator_expression(right: &Object) -> Object {
         Object::Null => Object::Boolean(true),
         Object::Integer(_) => Object::Boolean(false),
         Object::Boolean(bool) => Object::Boolean(!bool),
+        Object::ReturnValue(_) => todo!(), // eval_bang_operator_expression(value)
     }
 }
 
@@ -119,14 +155,15 @@ fn eval_minus_prefix_operator_expression(right: &Object) -> Object {
     match right {
         Object::Integer(i64) => Object::Integer(-*i64),
         Object::Null | Object::Boolean(_) => Object::Null,
+        Object::ReturnValue(_) => todo!(),
     }
 }
 
 #[cfg(test)]
 mod evaluator_tests {
     use super::*;
-    use crate::lexer::Lexer;
-    use crate::parser::Parser;
+    use crate::{lexer::Lexer, parser::Parser};
+    use std::any::Any;
 
     #[test]
     fn test_eval_integer_expression() {
@@ -201,6 +238,55 @@ mod evaluator_tests {
         }
     }
 
+    #[test]
+    fn test_if_else_expression() {
+        let tests: [(&str, Box<dyn Any>); 7] = [
+            ("if (true) { 10 }", Box::new(10_i64)),
+            ("if (false) { 10 }", Box::new(Object::Null)),
+            ("if (1) { 10 }", Box::new(10_i64)),
+            ("if (1 < 2) { 10 }", Box::new(10_i64)),
+            ("if (1 > 2) { 10 }", Box::new(Object::Null)),
+            ("if (1 > 2) { 10 } else { 20 }", Box::new(20_i64)),
+            ("if (1 < 2) { 10 } else { 20 }", Box::new(10_i64)),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input);
+            if expected.is::<i64>() {
+                test_integer_object(evaluated, *expected.downcast::<i64>().unwrap());
+            } else if expected.is::<Object>() {
+                test_null_object(*expected.downcast::<Object>().unwrap())
+            } else {
+                panic!("expected type not handled: '{:?}'.", expected.type_id())
+            }
+        }
+    }
+
+    #[test]
+    fn test_return_statements() {
+        let test: [(&str, i64); 5] = [
+            ("return 10;", 10_i64),
+            ("return 10; 9;", 10_i64),
+            ("return 2 * 5; 9;", 10_i64),
+            ("9: return 2 * 5; 9;", 10_i64),
+            (
+                "if (10 > 1) {\
+                    if (10 > 1) {\
+                        return 10;\
+                    }\
+                    \
+                    return 1;\
+                }",
+                10,
+            ),
+        ];
+
+        for (input, expected) in test {
+            let evaluated = test_eval(input);
+            test_integer_object(evaluated, expected);
+        }
+    }
+
     fn test_eval(input: &str) -> Object {
         let lexer = Lexer::new(input.to_owned());
         let mut parser = Parser::new(lexer);
@@ -222,5 +308,9 @@ mod evaluator_tests {
         };
 
         assert_eq!(boolean, expected_bool);
+    }
+
+    fn test_null_object(object: Object) {
+        assert!(matches!(object, Object::Null))
     }
 }

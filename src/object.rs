@@ -3,6 +3,7 @@ pub enum Object {
     Null,
     Integer(i64),
     Boolean(bool),
+    ReturnValue(Box<Object>),
 }
 
 impl Object {
@@ -11,6 +12,7 @@ impl Object {
             Self::Null => String::from("null"),
             Self::Integer(i) => format!("{i}"),
             Self::Boolean(b) => format!("{b}"),
+            Self::ReturnValue(value) => value.inspect(),
         }
     }
 }
