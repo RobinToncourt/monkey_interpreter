@@ -70,7 +70,7 @@ pub enum Statement {
         value: Box<Expression>,
     },
     Return {
-        return_value: Box<Expression>,
+        return_expression: Box<Expression>,
     },
     /// This is to be able to use expressions as statements.
     Expression(Box<Expression>),
@@ -81,7 +81,7 @@ impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Let { name, value } => write!(f, "let {name} = {value};"),
-            Self::Return { return_value } => write!(f, "return {return_value};"),
+            Self::Return { return_expression } => write!(f, "return {return_expression};"),
             Self::Expression(expression) => write!(f, "{expression}"),
             Self::Block(statements) => {
                 let output = statements

@@ -212,7 +212,7 @@ impl Parser {
         }
 
         Ok(Statement::Return {
-            return_value: Box::new(return_value?),
+            return_expression: Box::new(return_value?),
         })
     }
 
@@ -603,13 +603,13 @@ mod parser_tests {
 
         let expected_statements = vec![
             Statement::Return {
-                return_value: Box::new(Expression::Integer(5)),
+                return_expression: Box::new(Expression::Integer(5)),
             },
             Statement::Return {
-                return_value: Box::new(Expression::Integer(10)),
+                return_expression: Box::new(Expression::Integer(10)),
             },
             Statement::Return {
-                return_value: Box::new(Expression::Integer(993322)),
+                return_expression: Box::new(Expression::Integer(993322)),
             },
         ];
 
