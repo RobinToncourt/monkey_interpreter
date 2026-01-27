@@ -67,7 +67,7 @@ impl Display for Program {
 pub enum Statement {
     Let {
         name: String,
-        value: Box<Expression>,
+        expression: Box<Expression>,
     },
     Return {
         return_expression: Box<Expression>,
@@ -80,7 +80,7 @@ pub enum Statement {
 impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Let { name, value } => write!(f, "let {name} = {value};"),
+            Self::Let { name, expression } => write!(f, "let {name} = {expression};"),
             Self::Return { return_expression } => write!(f, "return {return_expression};"),
             Self::Expression(expression) => write!(f, "{expression}"),
             Self::Block(statements) => {
@@ -183,7 +183,7 @@ mod ast_tests {
         let program = Program {
             statements: vec![Statement::Let {
                 name: "myVar".to_owned(),
-                value: Box::new(Expression::Identifier("anotherVar".to_owned())),
+                expression: Box::new(Expression::Identifier("anotherVar".to_owned())),
             }],
         };
 

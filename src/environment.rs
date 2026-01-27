@@ -13,8 +13,8 @@ impl Environment {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<&Object> {
-        self.store.get(name)
+    pub fn get(&self, name: &str) -> Option<Object> {
+        self.store.get(name).cloned()
     }
 
     pub fn set(&mut self, name: String, value: Object) {

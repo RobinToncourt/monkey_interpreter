@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Object {
     Null,
     Integer(i64),
@@ -38,5 +38,9 @@ impl Object {
             Self::ReturnValue(value) => value.inspect(),
             Self::Error(s) => format!("ERROR: {s}"),
         }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
     }
 }

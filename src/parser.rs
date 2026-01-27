@@ -190,7 +190,7 @@ impl Parser {
 
         self.next_token();
 
-        let value = self.parse_expression(Precedence::Lowest);
+        let expression = self.parse_expression(Precedence::Lowest);
 
         if self.peek_token == Some(Token::Semicolon) {
             self.next_token();
@@ -198,7 +198,7 @@ impl Parser {
 
         Ok(Statement::Let {
             name,
-            value: Box::new(value?),
+            expression: Box::new(expression?),
         })
     }
 
@@ -546,15 +546,15 @@ mod parser_tests {
         let expected_statements = vec![
             Statement::Let {
                 name: "x".to_owned(),
-                value: Box::new(Expression::Integer(5)),
+                expression: Box::new(Expression::Integer(5)),
             },
             Statement::Let {
                 name: "y".to_owned(),
-                value: Box::new(Expression::Integer(10)),
+                expression: Box::new(Expression::Integer(10)),
             },
             Statement::Let {
                 name: "foo_bar".to_owned(),
-                value: Box::new(Expression::Integer(838383)),
+                expression: Box::new(Expression::Integer(838383)),
             },
         ];
 
@@ -587,12 +587,12 @@ mod parser_tests {
         expected_identifier: &str,
         expected_value: Box<dyn Any>,
     ) {
-        let Statement::Let { name, value } = statement else {
+        let Statement::Let { name, expression } = statement else {
             panic!("statement in not `Statement::Let`, got: '{statement:?}'.")
         };
 
         assert_eq!(name, expected_identifier);
-        test_literal_expression(value, expected_value);
+        test_literal_expression(expression, expected_value);
     }
 
     #[test]

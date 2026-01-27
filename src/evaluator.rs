@@ -1,22 +1,25 @@
-use crate::ast::{Expression, Program, Statement};
-use crate::{ast::Node, object::Object};
+use crate::{
+    ast::{Expression, Node, Program, Statement},
+    environment::Environment,
+    object::Object,
+};
 
-pub fn eval<T>(node: T) -> Object
+pub fn eval<T>(node: T, env: &mut Environment) -> Object
 where
     T: Into<Node>,
 {
     match node.into() {
-        Node::Program(program) => eval_program(&program),
-        Node::Statement(statement) => eval_statement(&statement),
-        Node::Expression(expression) => eval_expression(&expression),
+        Node::Program(program) => eval_program(&program, env),
+        Node::Statement(statement) => eval_statement(&statement, env),
+        Node::Expression(expression) => eval_expression(&expression, env),
     }
 }
 
-fn eval_program(program: &Program) -> Object {
+fn eval_program(program: &Program, env: &mut Environment) -> Object {
     let mut result = Object::Null;
 
     for statement in program.get_statements() {
-        result = eval_statement(statement);
+        result = eval_statement(statement, env);
 
         if let Object::ReturnValue(return_value) = result {
             return *return_value;
@@ -28,17 +31,29 @@ fn eval_program(program: &Program) -> Object {
     result
 }
 
-fn eval_statement(statement: &Statement) -> Object {
+fn eval_statement(statement: &Statement, env: &mut Environment) -> Object {
     match statement {
-        Statement::Let { name: _, value: _ } => Object::Null,
-        Statement::Return { return_expression } => eval_return_expression(return_expression),
-        Statement::Expression(expression) => eval_expression(expression),
-        Statement::Block(statements) => eval_block_statement(statements),
+        Statement::Let { name, expression } => eval_let_statement(name, expression, env),
+        Statement::Return { return_expression } => eval_return_statement(return_expression, env),
+        Statement::Expression(expression) => eval_expression(expression, env),
+        Statement::Block(statements) => eval_block_statement(statements, env),
     }
 }
 
-fn eval_return_expression(return_expression: &Expression) -> Object {
-    let return_value = eval_expression(return_expression);
+fn eval_let_statement(name: &str, expression: &Expression, env: &mut Environment) -> Object {
+    let value = eval_expression(expression, env);
+
+    if is_error(&value) {
+        return value;
+    }
+
+    env.set(name.to_owned(), value);
+
+    Object::Null
+}
+
+fn eval_return_statement(return_expression: &Expression, env: &mut Environment) -> Object {
+    let return_value = eval_expression(return_expression, env);
 
     if is_error(&return_value) {
         return return_value;
@@ -47,12 +62,13 @@ fn eval_return_expression(return_expression: &Expression) -> Object {
     Object::ReturnValue(Box::new(return_value))
 }
 
-fn eval_expression(expression: &Expression) -> Object {
+fn eval_expression(expression: &Expression, env: &mut Environment) -> Object {
     match expression {
+        Expression::Identifier(name) => eval_identifier(name, env),
         Expression::Integer(i) => Object::Integer(*i),
         Expression::Boolean(b) => Object::Boolean(*b),
         Expression::Prefix { operator, right } => {
-            let right = eval_expression(right);
+            let right = eval_expression(right, env);
 
             if is_error(&right) {
                 return right;
@@ -65,13 +81,13 @@ fn eval_expression(expression: &Expression) -> Object {
             operator,
             right,
         } => {
-            let left = eval_expression(left);
+            let left = eval_expression(left, env);
 
             if is_error(&left) {
                 return left;
             }
 
-            let right = eval_expression(right);
+            let right = eval_expression(right, env);
 
             if is_error(&right) {
                 return right;
@@ -83,16 +99,16 @@ fn eval_expression(expression: &Expression) -> Object {
             condition,
             consequences,
             alternatives,
-        } => eval_if_expression(condition, consequences, alternatives.as_deref()),
+        } => eval_if_expression(condition, consequences, alternatives.as_deref(), env),
         _ => Object::Null,
     }
 }
 
-fn eval_block_statement(statements: &[Statement]) -> Object {
+fn eval_block_statement(statements: &[Statement], env: &mut Environment) -> Object {
     let mut result = Object::Null;
 
     for statement in statements {
-        result = eval_statement(statement);
+        result = eval_statement(statement, env);
 
         if matches!(result, Object::ReturnValue(_)) || matches!(result, Object::Error(_)) {
             return result;
@@ -131,17 +147,20 @@ fn eval_if_expression(
     condition: &Expression,
     consequences: &Statement,
     alternatives: Option<&Statement>,
+    env: &mut Environment,
 ) -> Object {
-    let condition = eval_expression(condition);
+    let condition = eval_expression(condition, env);
 
     if is_error(&condition) {
         return condition;
     }
 
     if is_truthy(&condition) {
-        eval_statement(consequences)
+        eval_statement(consequences, env)
     } else {
-        alternatives.map_or(Object::Null, eval_statement)
+        alternatives.map_or(Object::Null, |alternatives| {
+            eval_statement(alternatives, env)
+        })
     }
 }
 
@@ -152,6 +171,11 @@ fn is_truthy(object: &Object) -> bool {
         Object::Null => false,
         Object::ReturnValue(_) | Object::Error(_) => unreachable!(),
     }
+}
+
+fn eval_identifier(name: &str, env: &mut Environment) -> Object {
+    env.get(name)
+        .unwrap_or(Object::Error(format!("identifier not found: {name}")))
 }
 
 fn eval_integer_infix_expression(left: i64, operator: &str, right: i64) -> Object {
@@ -401,7 +425,8 @@ mod evaluator_tests {
         let lexer = Lexer::new(input.to_owned());
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
-        eval(program)
+        let mut env = Environment::new();
+        eval(program, &mut env)
     }
 
     fn test_integer_object(object: Object, expected_int: i64) -> bool {

@@ -1,6 +1,6 @@
 use std::io::{BufReader, Read, Write};
 
-use crate::{evaluator, lexer, parser};
+use crate::{environment::Environment, evaluator, lexer, parser};
 
 const PROMPT: &str = ">> ";
 const MONKEY_FACE: &str = r#"            __,__
@@ -21,6 +21,8 @@ where
     IN: Read,
     OUT: Write,
 {
+    let mut env = Environment::new();
+
     loop {
         output.write_all(PROMPT.as_bytes()).unwrap();
         output.flush().unwrap();
@@ -44,8 +46,10 @@ where
             continue;
         }
 
-        let evaluated = evaluator::eval(program);
-        println!("{}", evaluated.inspect());
+        let evaluated = evaluator::eval(program, &mut env);
+        if !evaluated.is_null() {
+            println!("{}", evaluated.inspect());
+        }
     }
 }
 
