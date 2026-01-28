@@ -57,6 +57,10 @@ impl Parser {
                 Self::parse_integer_literal as PrefixParseFn,
             ),
             (
+                discriminant(&Token::empty_str()),
+                Self::parse_string_literal as PrefixParseFn,
+            ),
+            (
                 discriminant(&Token::Bang),
                 Self::parse_prefix_expression as PrefixParseFn,
             ),
@@ -230,6 +234,8 @@ impl Parser {
 
     //#[log_call]
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, ()> {
+        // TODO: handle case where `Self::cur_token` is `Option::None`,
+        // TODO: can append when there is no `Token::Semicolon` at the end.
         let Some(prefix) = self
             .prefix_parse_fns
             .get(&self.cur_token.as_ref().map(discriminant).unwrap())
@@ -301,6 +307,16 @@ impl Parser {
         };
 
         Ok(Expression::Integer(value))
+    }
+
+    fn parse_string_literal(&mut self) -> Result<Expression, ()> {
+        let Token::Str(value) = self.cur_token.clone().unwrap() else {
+            self.errors
+                .push(format!("Not an `Token::Str`, got '{:?}'.", self.cur_token));
+            return Err(());
+        };
+
+        Ok(Expression::String(value))
     }
 
     //#[log_call]
@@ -527,7 +543,7 @@ impl Parser {
 
     fn no_prefix_parse_fn_error(&mut self, token: &Token) {
         self.errors
-            .push(format!("No prefix parse function found for '{token}'."));
+            .push(format!("No prefix parse function found for '{token:?}'."));
     }
 }
 
@@ -1034,6 +1050,29 @@ mod parser_tests {
 
             assert_eq!(program.to_string(), expected);
         }
+    }
+
+    #[test]
+    fn test_string_literal_expression() {
+        const INPUT: &str = r#""Hello World!";"#;
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::String(value) = *expression else {
+            panic!("expression is not `Expression::String`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(value, String::from("Hello World!"));
     }
 
     fn test_prefix_expression(

@@ -12,7 +12,6 @@ pub struct Environment {
 
 impl Environment {
     pub fn new() -> Self {
-        println!("Create new environment");
         Self {
             store: HashMap::new(),
             outer: None,
@@ -40,11 +39,5 @@ impl Environment {
     pub fn set(&mut self, name: String, value: Object) -> Object {
         self.store.insert(name, value.clone());
         value
-    }
-}
-
-impl Drop for Environment {
-    fn drop(&mut self) {
-        println!("Drop environment");
     }
 }

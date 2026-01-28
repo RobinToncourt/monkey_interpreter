@@ -70,6 +70,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
     match expression {
         Expression::Identifier(name) => eval_identifier(name, env),
         Expression::Integer(i) => Object::Integer(*i),
+        Expression::String(value) => Object::String(value.clone()),
         Expression::Boolean(b) => Object::Boolean(*b),
         Expression::Prefix { operator, right } => {
             let right = eval_expression(right, env);
@@ -140,6 +141,9 @@ fn eval_infix_expression(left: &Object, operator: &str, right: &Object) -> Objec
     match (left, right) {
         (Object::Integer(left_value), Object::Integer(right_value)) => {
             eval_integer_infix_expression(*left_value, operator, *right_value)
+        }
+        (Object::String(left_str), Object::String(right_str)) => {
+            eval_string_infix_expression(left_str, operator, right_str)
         }
         (Object::Boolean(left_bool), Object::Boolean(right_bool)) => {
             eval_boolean_infix_expression(*left_bool, operator, *right_bool)
@@ -268,7 +272,7 @@ fn is_truthy(object: &Object) -> bool {
         Object::Boolean(b) => *b,
         Object::Integer(i) => *i != 0,
         Object::Null => false,
-        Object::ReturnValue(_) | Object::Error(_) | Object::Function { .. } => unreachable!(),
+        _ => unreachable!(),
     }
 }
 
@@ -288,11 +292,24 @@ fn eval_integer_infix_expression(left: i64, operator: &str, right: i64) -> Objec
         "<" => Object::Boolean(left < right),
         "==" => Object::Boolean(left == right),
         "!=" => Object::Boolean(left != right),
-        _ => panic!(
+        _ => Object::Error(format!(
             "unknown operator: {} {operator} {}",
             Object::integer_type_str(),
             Object::integer_type_str()
-        ),
+        )),
+    }
+}
+
+fn eval_string_infix_expression(left: &str, operator: &str, right: &str) -> Object {
+    match operator {
+        "+" => Object::String(format!("{left}{right}")),
+        "==" => Object::Boolean(left == right),
+        "!=" => Object::Boolean(left != right),
+        _ => Object::Error(format!(
+            "unknown operator: {} {operator} {}",
+            Object::string_type_str(),
+            Object::string_type_str()
+        )),
     }
 }
 
@@ -325,7 +342,7 @@ fn eval_bang_operator_expression(right: &Object) -> Object {
         Object::Null => Object::Boolean(true),
         Object::Integer(_) => Object::Boolean(false),
         Object::Boolean(bool) => Object::Boolean(!bool),
-        Object::ReturnValue(_) | Object::Error(_) | Object::Function { .. } => unreachable!(),
+        _ => unreachable!(),
     }
 }
 
@@ -335,7 +352,7 @@ fn eval_minus_prefix_operator_expression(right: &Object) -> Object {
         Object::Null | Object::Boolean(_) => {
             Object::Error(format!("unknown operator: -{}", right.get_type()))
         }
-        Object::ReturnValue(_) | Object::Error(_) | Object::Function { .. } => unreachable!(),
+        _ => unreachable!(),
     }
 }
 
@@ -491,7 +508,7 @@ mod evaluator_tests {
 
     #[test]
     fn test_error_handling() {
-        let tests: [(&str, &str); 8] = [
+        let tests: [(&str, &str); 9] = [
             ("5 + true;", "type mismatch: Integer + Boolean."),
             ("5 + true; 5;", "type mismatch: Integer + Boolean"),
             ("-true", "unknown operator: -Boolean"),
@@ -512,6 +529,7 @@ mod evaluator_tests {
                 "unknown operator: Boolean + Boolean",
             ),
             ("foobar", "identifier not found: foobar"),
+            (r#""Hello" - "World!""#, "unknown operator: String - String"),
         ];
 
         let mut all_tests_passed = true;
@@ -561,7 +579,7 @@ mod evaluator_tests {
 
     #[test]
     fn test_function_application() {
-        let tests: [(&str, i64); 6] = [
+        const TESTS: [(&str, i64); 6] = [
             ("let identity = fn(x) { x; }; identity(5);", 5),
             ("let identity = fn(x) { return x; }; identity(5);", 5),
             ("let double = fn(x) { x * 2; }; double(5);", 10),
@@ -570,7 +588,7 @@ mod evaluator_tests {
             ("fn(x) { x; }(5)", 5),
         ];
 
-        for (input, expected) in tests {
+        for (input, expected) in TESTS {
             let evaluated = test_eval(input);
             test_integer_object(evaluated, expected);
         }
@@ -588,6 +606,45 @@ mod evaluator_tests {
 
         let evaluated = test_eval(INPUT);
         test_integer_object(evaluated, 4);
+    }
+
+    #[test]
+    fn test_string_literal() {
+        const INPUT: &str = r#""Hello, World!""#;
+
+        let evaluated = test_eval(INPUT);
+        let Object::String(value) = evaluated else {
+            panic!("expected `Object::String` object, found {evaluated:?}");
+        };
+
+        assert_eq!(value, "Hello, World!");
+    }
+
+    #[test]
+    fn test_string_concatenation() {
+        const INPUT: &str = r#""Hello," + " " + "World!""#;
+
+        let evaluated = test_eval(INPUT);
+        let Object::String(value) = evaluated else {
+            panic!("expected `Object::String` object, found {evaluated:?}");
+        };
+
+        assert_eq!(value, "Hello, World!");
+    }
+
+    #[test]
+    fn test_string_comparison() {
+        const TESTS: [(&str, bool); 4] = [
+            (r#""hello" == "hello""#, true),
+            (r#""hello" == "world""#, false),
+            (r#""hello" != "hello""#, false),
+            (r#""hello" != "world""#, true),
+        ];
+
+        for (input, expected) in TESTS {
+            let evaluated = test_eval(input);
+            test_boolean_object(evaluated, expected);
+        }
     }
 
     fn test_eval(input: &str) -> Object {

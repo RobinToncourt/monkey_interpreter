@@ -55,6 +55,20 @@ impl Lexer {
 
         int
     }
+
+    fn read_string(&mut self) -> String {
+        let mut result = String::with_capacity(20);
+
+        // Advance from `"` char.
+        self.read_char();
+
+        while self.ch != '"' && self.ch != '\0' {
+            result.push(self.ch);
+            self.read_char();
+        }
+
+        result
+    }
 }
 
 impl Iterator for Lexer {
@@ -94,6 +108,10 @@ impl Iterator for Lexer {
             ',' => Some(Token::Comma),
             '{' => Some(Token::LBrace),
             '}' => Some(Token::RBrace),
+            '"' => {
+                let s = self.read_string();
+                Some(Token::Str(s))
+            }
             '\0' => None,
             _ => {
                 if is_letter(ch) {
@@ -267,6 +285,113 @@ mod lexer_test {
             Token::NotEqual,
             Token::Int("5".to_owned()),
             Token::Semicolon,
+        ];
+
+        test_lexer(INPUT.to_owned(), expected_tokens);
+    }
+
+    #[test]
+    fn test_next_token() {
+        const INPUT: &str = r#"
+            let five = 5;
+            let ten = 10;
+
+            let add = fn(x, y) {
+                x + y;
+            };
+
+            let result = add(five, ten);
+            !-/*5;
+            5 < 10 > 5;
+
+            if (5 < 10) {
+                return true;
+            } else {
+                return false;
+            }
+
+            10 == 10;
+            10 != 9;
+            "foobar"
+            "foo bar"
+        "#;
+
+        let expected_tokens: Vec<Token> = vec![
+            Token::Let,
+            Token::Ident("five".to_owned()),
+            Token::Assign,
+            Token::Int("5".to_owned()),
+            Token::Semicolon,
+            Token::Let,
+            Token::Ident("ten".to_owned()),
+            Token::Assign,
+            Token::Int("10".to_owned()),
+            Token::Semicolon,
+            Token::Let,
+            Token::Ident("add".to_owned()),
+            Token::Assign,
+            Token::Function,
+            Token::LParen,
+            Token::Ident("x".to_owned()),
+            Token::Comma,
+            Token::Ident("y".to_owned()),
+            Token::RParen,
+            Token::LBrace,
+            Token::Ident("x".to_owned()),
+            Token::Plus,
+            Token::Ident("y".to_owned()),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Semicolon,
+            Token::Let,
+            Token::Ident("result".to_owned()),
+            Token::Assign,
+            Token::Ident("add".to_owned()),
+            Token::LParen,
+            Token::Ident("five".to_owned()),
+            Token::Comma,
+            Token::Ident("ten".to_owned()),
+            Token::RParen,
+            Token::Semicolon,
+            Token::Bang,
+            Token::Minus,
+            Token::Slash,
+            Token::Asterisk,
+            Token::Int("5".to_owned()),
+            Token::Semicolon,
+            Token::Int("5".to_owned()),
+            Token::LesserThan,
+            Token::Int("10".to_owned()),
+            Token::GreaterThan,
+            Token::Int("5".to_owned()),
+            Token::Semicolon,
+            Token::If,
+            Token::LParen,
+            Token::Int("5".to_owned()),
+            Token::LesserThan,
+            Token::Int("10".to_owned()),
+            Token::RParen,
+            Token::LBrace,
+            Token::Return,
+            Token::True,
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Else,
+            Token::LBrace,
+            Token::Return,
+            Token::False,
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Int("10".to_owned()),
+            Token::Equal,
+            Token::Int("10".to_owned()),
+            Token::Semicolon,
+            Token::Int("10".to_owned()),
+            Token::NotEqual,
+            Token::Int("9".to_owned()),
+            Token::Semicolon,
+            Token::Str("foobar".to_owned()),
+            Token::Str("foo bar".to_owned()),
         ];
 
         test_lexer(INPUT.to_owned(), expected_tokens);

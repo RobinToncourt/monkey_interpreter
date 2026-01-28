@@ -7,6 +7,7 @@ use crate::{
 pub enum Object {
     Null,
     Integer(i64),
+    String(String),
     Boolean(bool),
     Function {
         parameters: Vec<Expression>,
@@ -26,6 +27,10 @@ impl Object {
         "Integer"
     }
 
+    pub const fn string_type_str() -> &'static str {
+        "String"
+    }
+
     pub const fn boolean_type_str() -> &'static str {
         "Boolean"
     }
@@ -34,6 +39,7 @@ impl Object {
         match self {
             Self::Null => String::from(Self::null_type_str()),
             Self::Integer(_) => String::from(Self::integer_type_str()),
+            Self::String(_) => String::from(Self::string_type_str()),
             Self::Boolean(_) => String::from(Self::boolean_type_str()),
             Self::Function { .. } => String::from("Function"),
             Self::ReturnValue(_) => String::from("ReturnValue"),
@@ -45,6 +51,7 @@ impl Object {
         match self {
             Self::Null => String::from("null"),
             Self::Integer(i) => format!("{i}"),
+            Self::String(s) => format!(r#""{s}""#),
             Self::Boolean(b) => format!("{b}"),
             Self::Function {
                 parameters,
