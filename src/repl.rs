@@ -33,7 +33,7 @@ where
         if buffer.is_empty() {
             continue;
         }
-        if buffer == "exit" {
+        if buffer == ".exit" {
             break;
         }
 

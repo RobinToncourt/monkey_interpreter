@@ -63,7 +63,7 @@ impl Display for Program {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Let {
         name: String,
@@ -94,7 +94,7 @@ impl Display for Statement {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     /// A `Token::Ident` can produce a value when at the right of a `Token::Assign`.
     Identifier(String),
