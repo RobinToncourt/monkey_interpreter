@@ -1,10 +1,14 @@
+use std::{cell::RefCell, rc::Rc};
+
+use crate::environment::SharedEnv;
+
 use crate::{
     ast::{Expression, Node, Program, Statement},
     environment::Environment,
     object::Object,
 };
 
-pub fn eval<T>(node: T, env: &mut Environment) -> Object
+pub fn eval<T>(node: T, env: &SharedEnv) -> Object
 where
     T: Into<Node>,
 {
@@ -15,7 +19,7 @@ where
     }
 }
 
-fn eval_program(program: &Program, env: &mut Environment) -> Object {
+fn eval_program(program: &Program, env: &SharedEnv) -> Object {
     let mut result = Object::Null;
 
     for statement in program.get_statements() {
@@ -31,7 +35,7 @@ fn eval_program(program: &Program, env: &mut Environment) -> Object {
     result
 }
 
-fn eval_statement(statement: &Statement, env: &mut Environment) -> Object {
+fn eval_statement(statement: &Statement, env: &SharedEnv) -> Object {
     match statement {
         Statement::Let { name, expression } => eval_let_statement(name, expression, env),
         Statement::Return { return_expression } => eval_return_statement(return_expression, env),
@@ -40,19 +44,19 @@ fn eval_statement(statement: &Statement, env: &mut Environment) -> Object {
     }
 }
 
-fn eval_let_statement(name: &str, expression: &Expression, env: &mut Environment) -> Object {
+fn eval_let_statement(name: &str, expression: &Expression, env: &SharedEnv) -> Object {
     let value = eval_expression(expression, env);
 
     if is_error(&value) {
         return value;
     }
 
-    env.set(name.to_owned(), value);
+    env.borrow_mut().set(name.to_owned(), value);
 
     Object::Null
 }
 
-fn eval_return_statement(return_expression: &Expression, env: &mut Environment) -> Object {
+fn eval_return_statement(return_expression: &Expression, env: &SharedEnv) -> Object {
     let return_value = eval_expression(return_expression, env);
 
     if is_error(&return_value) {
@@ -62,7 +66,7 @@ fn eval_return_statement(return_expression: &Expression, env: &mut Environment) 
     Object::ReturnValue(Box::new(return_value))
 }
 
-fn eval_expression(expression: &Expression, env: &mut Environment) -> Object {
+fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
     match expression {
         Expression::Identifier(name) => eval_identifier(name, env),
         Expression::Integer(i) => Object::Integer(*i),
@@ -110,7 +114,7 @@ fn eval_expression(expression: &Expression, env: &mut Environment) -> Object {
     }
 }
 
-fn eval_block_statement(statements: &[Statement], env: &mut Environment) -> Object {
+fn eval_block_statement(statements: &[Statement], env: &SharedEnv) -> Object {
     let mut result = Object::Null;
 
     for statement in statements {
@@ -153,7 +157,7 @@ fn eval_if_expression(
     condition: &Expression,
     consequences: &Statement,
     alternatives: Option<&Statement>,
-    env: &mut Environment,
+    env: &SharedEnv,
 ) -> Object {
     let condition = eval_expression(condition, env);
 
@@ -173,7 +177,7 @@ fn eval_if_expression(
 fn eval_function_expression(
     parameters: &[Expression],
     body: &Statement,
-    env: &mut Environment,
+    env: &SharedEnv,
 ) -> Object {
     Object::Function {
         parameters: parameters.to_vec(),
@@ -185,7 +189,7 @@ fn eval_function_expression(
 fn eval_call_expression(
     function: &Expression,
     arguments: &[Expression],
-    env: &mut Environment,
+    env: &SharedEnv,
 ) -> Object {
     let function = eval_expression(function, env);
 
@@ -202,10 +206,7 @@ fn eval_call_expression(
     apply_function(function, &arguments)
 }
 
-fn eval_expressions(
-    arguments: &[Expression],
-    env: &mut Environment,
-) -> Result<Vec<Object>, Object> {
+fn eval_expressions(arguments: &[Expression], env: &SharedEnv) -> Result<Vec<Object>, Object> {
     let mut result = Vec::new();
 
     for arg in arguments {
@@ -231,16 +232,16 @@ fn apply_function(function: Object, arguments: &[Object]) -> Object {
         return Object::Error(format!("Not a function: {}", function.get_type()));
     };
 
-    let mut extended_env = extend_function_environment(parameters, env, arguments);
-    let evaluated = eval_statement(&body, &mut extended_env);
+    let extended_env = extend_function_environment(parameters, env, arguments);
+    let evaluated = eval_statement(&body, &extended_env);
     unwrap_return_value(evaluated)
 }
 
 fn extend_function_environment(
     fn_parameters: Vec<Expression>,
-    fn_env: Environment,
+    fn_env: SharedEnv,
     arguments: &[Object],
-) -> Environment {
+) -> SharedEnv {
     let mut extended_env = Environment::new_enclosed(fn_env);
 
     for (i, param) in fn_parameters.into_iter().enumerate() {
@@ -251,7 +252,7 @@ fn extend_function_environment(
         extended_env.set(name, arguments[i].clone());
     }
 
-    extended_env
+    Rc::new(RefCell::new(extended_env))
 }
 
 fn unwrap_return_value(object: Object) -> Object {
@@ -271,8 +272,9 @@ fn is_truthy(object: &Object) -> bool {
     }
 }
 
-fn eval_identifier(name: &str, env: &mut Environment) -> Object {
-    env.get(name)
+fn eval_identifier(name: &str, env: &SharedEnv) -> Object {
+    env.borrow_mut()
+        .get(name)
         .unwrap_or(Object::Error(format!("identifier not found: {name}")))
 }
 
@@ -592,8 +594,8 @@ mod evaluator_tests {
         let lexer = Lexer::new(input.to_owned());
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
-        let mut env = Environment::new();
-        eval(program, &mut env)
+        let env = Rc::new(RefCell::new(Environment::new()));
+        eval(program, &env)
     }
 
     fn test_integer_object(object: Object, expected_int: i64) -> bool {

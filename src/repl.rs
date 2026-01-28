@@ -1,4 +1,7 @@
-use std::io::{BufReader, Read, Write};
+use std::{
+    io::{BufReader, Read, Write},
+    {cell::RefCell, rc::Rc},
+};
 
 use crate::{environment::Environment, evaluator, lexer, parser};
 
@@ -21,7 +24,7 @@ where
     IN: Read,
     OUT: Write,
 {
-    let mut env = Environment::new();
+    let env = Rc::new(RefCell::new(Environment::new()));
 
     loop {
         output.write_all(PROMPT.as_bytes()).unwrap();
@@ -46,7 +49,7 @@ where
             continue;
         }
 
-        let evaluated = evaluator::eval(program, &mut env);
+        let evaluated = evaluator::eval(program, &env);
         if !evaluated.is_null() {
             println!("{}", evaluated.inspect());
         }

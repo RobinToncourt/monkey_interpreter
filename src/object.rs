@@ -1,6 +1,6 @@
 use crate::{
     ast::{Expression, Statement},
-    environment::Environment,
+    environment::SharedEnv,
 };
 
 #[derive(Debug, Clone)]
@@ -11,7 +11,7 @@ pub enum Object {
     Function {
         parameters: Vec<Expression>,
         body: Statement,
-        env: Environment,
+        env: SharedEnv,
     },
     ReturnValue(Box<Object>),
     Error(String),

@@ -1,24 +1,27 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::object::Object;
+
+pub type SharedEnv = Rc<RefCell<Environment>>;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
     store: HashMap<String, Object>,
-    outer: Option<Box<Self>>,
+    outer: Option<SharedEnv>,
 }
 
 impl Environment {
     pub fn new() -> Self {
+        println!("Create new environment");
         Self {
             store: HashMap::new(),
             outer: None,
         }
     }
 
-    pub fn new_enclosed(outer: Self) -> Self {
+    pub fn new_enclosed(outer: SharedEnv) -> Self {
         let mut result = Self::new();
-        result.outer = Some(Box::new(outer));
+        result.outer = Some(outer);
         result
     }
 
@@ -28,7 +31,7 @@ impl Environment {
         if result.is_none()
             && let Some(outer) = self.outer.as_ref()
         {
-            return outer.get(name);
+            return outer.borrow_mut().get(name);
         }
 
         result
@@ -37,5 +40,11 @@ impl Environment {
     pub fn set(&mut self, name: String, value: Object) -> Object {
         self.store.insert(name, value.clone());
         value
+    }
+}
+
+impl Drop for Environment {
+    fn drop(&mut self) {
+        println!("Drop environment");
     }
 }
