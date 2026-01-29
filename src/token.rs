@@ -1,6 +1,4 @@
-use std::{fmt::Display, mem::Discriminant};
-
-pub type TokenType = Discriminant<Token>;
+use std::fmt::Display;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {

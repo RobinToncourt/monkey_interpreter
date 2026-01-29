@@ -1,9 +1,9 @@
-use std::{collections::HashMap, mem::discriminant};
+use std::mem::discriminant;
 
 use crate::{
     ast::{Expression, Program, Statement},
     lexer::Lexer,
-    token::{Token, TokenType},
+    token::Token,
 };
 
 type PrefixParseFn = fn(parser: &mut Parser) -> Result<Expression, ()>;
@@ -42,110 +42,15 @@ pub struct Parser {
 
     cur_token: Option<Token>,
     peek_token: Option<Token>,
-
-    prefix_parse_fns: HashMap<TokenType, PrefixParseFn>,
-    infix_parse_fns: HashMap<TokenType, InfixParseFn>,
 }
 
 impl Parser {
     pub fn new(lexer: Lexer) -> Self {
-        // TODO: move to a function that uses a match.
-        let prefix_parse_fns: HashMap<TokenType, PrefixParseFn> = [
-            (
-                discriminant(&Token::empty_ident()),
-                Self::parse_identifier as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::empty_int()),
-                Self::parse_integer_literal as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::empty_str()),
-                Self::parse_string_literal as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::Bang),
-                Self::parse_prefix_expression as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::Minus),
-                Self::parse_prefix_expression as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::True),
-                Self::parse_boolean as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::False),
-                Self::parse_boolean as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::LParen),
-                Self::parse_grouped_expression as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::If),
-                Self::parse_if_expression as PrefixParseFn,
-            ),
-            (
-                discriminant(&Token::Function),
-                Self::parse_function_literal as PrefixParseFn,
-            ),
-        ]
-        .into();
-
-        // TODO: move to a function that uses a match.
-        let infix_parse_fns: HashMap<TokenType, InfixParseFn> = [
-            (
-                discriminant(&Token::Plus),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::Minus),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::Slash),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::Asterisk),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::Equal),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::NotEqual),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::LesserThan),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::GreaterThan),
-                Self::parse_infix_expression as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::Dot),
-                Self::parse_float_literal as InfixParseFn,
-            ),
-            (
-                discriminant(&Token::LParen),
-                Self::parse_call_expression as InfixParseFn,
-            ),
-        ]
-        .into();
-
         let mut parser = Self {
             lexer,
             errors: Vec::new(),
             cur_token: None,
             peek_token: None,
-            prefix_parse_fns,
-            infix_parse_fns,
         };
 
         // Read two tokens to initialize fields.
@@ -241,10 +146,7 @@ impl Parser {
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, ()> {
         // TODO: handle case where `Self::cur_token` is `Option::None`,
         // TODO: can append when there is no `Token::Semicolon` at the end.
-        let Some(prefix) = self
-            .prefix_parse_fns
-            .get(&self.cur_token.as_ref().map(discriminant).unwrap())
-        else {
+        let Some(prefix) = Self::get_prefix_parse_function(self.cur_token.as_ref().unwrap()) else {
             self.no_prefix_parse_fn_error(&self.cur_token.clone().unwrap());
             return Err(());
         };
@@ -253,22 +155,47 @@ impl Parser {
 
         while self.peek_token != Some(Token::Semicolon) && precedence < self.peek_token_precedence()
         {
-            let Some(peek_token) = self.peek_token.as_ref().map(discriminant) else {
+            let Some(infix) = Self::get_infix_parse_function(self.peek_token.as_ref().unwrap())
+            else {
                 return Ok(left_expression);
             };
 
-            if !self.infix_parse_fns.contains_key(&peek_token) {
-                return Ok(left_expression);
-            }
-
             self.next_token();
-
-            let infix = self.infix_parse_fns.get(&peek_token).unwrap();
 
             left_expression = infix(self, left_expression)?;
         }
 
         Ok(left_expression)
+    }
+
+    fn get_prefix_parse_function(token: &Token) -> Option<PrefixParseFn> {
+        match token {
+            Token::Ident(_) => Some(Self::parse_identifier as PrefixParseFn),
+            Token::Int(_) => Some(Self::parse_integer_literal as PrefixParseFn),
+            Token::Str(_) => Some(Self::parse_string_literal as PrefixParseFn),
+            Token::Bang | Token::Minus => Some(Self::parse_prefix_expression as PrefixParseFn),
+            Token::True | Token::False => Some(Self::parse_boolean as PrefixParseFn),
+            Token::LParen => Some(Self::parse_grouped_expression as PrefixParseFn),
+            Token::If => Some(Self::parse_if_expression as PrefixParseFn),
+            Token::Function => Some(Self::parse_function_literal as PrefixParseFn),
+            _ => None,
+        }
+    }
+
+    fn get_infix_parse_function(token: &Token) -> Option<InfixParseFn> {
+        match token {
+            Token::Plus
+            | Token::Minus
+            | Token::Slash
+            | Token::Asterisk
+            | Token::Equal
+            | Token::NotEqual
+            | Token::LesserThan
+            | Token::GreaterThan => Some(Self::parse_infix_expression as InfixParseFn),
+            Token::Dot => Some(Self::parse_float_literal as InfixParseFn),
+            Token::LParen => Some(Self::parse_call_expression as InfixParseFn),
+            _ => None,
+        }
     }
 
     fn parse_identifier(&mut self) -> Result<Expression, ()> {
