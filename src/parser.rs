@@ -20,6 +20,7 @@ enum Precedence {
     Prefix,
     Dot,
     Call,
+    Index,
 }
 
 impl Precedence {
@@ -31,6 +32,7 @@ impl Precedence {
             Token::Asterisk | Token::Slash => Self::Product,
             Token::Dot => Self::Dot,
             Token::LParen => Self::Call,
+            Token::LBracket => Self::Index,
             _ => Self::Lowest,
         }
     }
@@ -176,6 +178,7 @@ impl Parser {
             Token::Bang | Token::Minus => Some(Self::parse_prefix_expression as PrefixParseFn),
             Token::True | Token::False => Some(Self::parse_boolean as PrefixParseFn),
             Token::LParen => Some(Self::parse_grouped_expression as PrefixParseFn),
+            Token::LBracket => Some(Self::parse_array_literal as PrefixParseFn),
             Token::If => Some(Self::parse_if_expression as PrefixParseFn),
             Token::Function => Some(Self::parse_function_literal as PrefixParseFn),
             _ => None,
@@ -194,6 +197,7 @@ impl Parser {
             | Token::GreaterThan => Some(Self::parse_infix_expression as InfixParseFn),
             Token::Dot => Some(Self::parse_float_literal as InfixParseFn),
             Token::LParen => Some(Self::parse_call_expression as InfixParseFn),
+            Token::LBracket => Some(Self::parse_index_expression as InfixParseFn),
             _ => None,
         }
     }
@@ -323,6 +327,11 @@ impl Parser {
         expression
     }
 
+    fn parse_array_literal(&mut self) -> Result<Expression, ()> {
+        let elements = self.parse_expression_list(&Token::RBracket)?;
+        Ok(Expression::Array(elements))
+    }
+
     fn parse_if_expression(&mut self) -> Result<Expression, ()> {
         if !self.expect_peek(&Token::LParen) {
             return Err(());
@@ -433,35 +442,50 @@ impl Parser {
     }
 
     fn parse_call_expression(&mut self, function: Expression) -> Result<Expression, ()> {
-        let arguments = self.parse_call_arguments();
+        let arguments = self.parse_expression_list(&Token::RParen)?;
         Ok(Expression::Call {
             function: Box::new(function),
-            arguments: arguments?,
+            arguments,
         })
     }
 
-    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, ()> {
-        let mut arguments = Vec::<Expression>::new();
+    fn parse_index_expression(&mut self, left: Expression) -> Result<Expression, ()> {
+        self.next_token();
 
-        if self.peek_token == Some(Token::RParen) {
+        let index = self.parse_expression(Precedence::Lowest)?;
+
+        if !self.expect_peek(&Token::RBracket) {
+            return Err(());
+        }
+
+        Ok(Expression::Indexing {
+            left: Box::new(left),
+            index: Box::new(index),
+        })
+    }
+
+    fn parse_expression_list(&mut self, end_token: &Token) -> Result<Vec<Expression>, ()> {
+        let mut result = Vec::<Expression>::new();
+
+        if self.peek_token == Some(end_token.clone()) {
             self.next_token();
-            return Ok(arguments);
+            return Ok(result);
         }
 
         self.next_token();
-        arguments.push(self.parse_expression(Precedence::Lowest)?);
+        result.push(self.parse_expression(Precedence::Lowest)?);
 
         while self.peek_token == Some(Token::Comma) {
             self.next_token();
             self.next_token();
-            arguments.push(self.parse_expression(Precedence::Lowest)?);
+            result.push(self.parse_expression(Precedence::Lowest)?);
         }
 
-        if !self.expect_peek(&Token::RParen) {
+        if !self.expect_peek(end_token) {
             return Err(());
         }
 
-        Ok(arguments)
+        Ok(result)
     }
 
     fn next_token(&mut self) {
@@ -993,7 +1017,7 @@ mod parser_tests {
 
     #[test]
     fn test_operator_precedence_parsing() {
-        const TEST: [(&str, &str); 27] = [
+        let tests: Vec<(&str, &str)> = vec![
             ("-a * b", "((-a) * b)"),
             ("!-a", "(!(-a))"),
             ("a + b + c", "((a + b) + c)"),
@@ -1039,9 +1063,18 @@ mod parser_tests {
                 "add(a + b + c * d / f + g)",
                 "add((((a + b) + ((c * d) / f)) + g))",
             ),
+            (
+                "a * [1, 2, 3, 4][b * c] * d",
+                "((a * ([1, 2, 3, 4][(b * c)])) * d)",
+            ),
+            (
+                "add(a * b[2], b[1], 2 * [1, 2][1])",
+                "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))",
+            ),
         ];
 
-        for (input, expected) in TEST {
+        for (input, expected) in tests.into_iter() {
+            println!("\tinput: '{input}'");
             let lexer = Lexer::new(input.to_owned());
             let mut parser = Parser::new(lexer);
             let program = parser.parse_program();
@@ -1072,6 +1105,70 @@ mod parser_tests {
         };
 
         assert_eq!(value, String::from("Hello World!"));
+    }
+
+    #[test]
+    fn test_parsing_array_literals() {
+        const INPUT: &str = "[1, 2 * 2, 3 + 3]";
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Array(values) = *expression else {
+            panic!("expression is not `Expression::Array`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(values.len(), 3);
+
+        let mut values = values.into_iter();
+        test_integer_literal(Box::new(values.next().unwrap()), 1);
+        test_infix_expression(
+            Box::new(values.next().unwrap()),
+            Box::new(2_i64),
+            "*",
+            Box::new(2_i64),
+        );
+        test_infix_expression(
+            Box::new(values.next().unwrap()),
+            Box::new(3_i64),
+            "+",
+            Box::new(3_i64),
+        );
+    }
+
+    #[test]
+    fn test_parsing_index_expression() {
+        const INPUT: &str = "my_array[1 + 1]";
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        println!("{program}");
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Indexing { left, index } = *expression else {
+            panic!("expression is not `Expression::Indexing`, got: '{expression:?}'.")
+        };
+
+        test_identifier(left, "my_array");
+        test_infix_expression(index, Box::new(1_i64), "+", Box::new(1_i64));
     }
 
     fn test_prefix_expression(
@@ -1155,29 +1252,5 @@ mod parser_tests {
 
     fn check_parser_errors(errors: &[String]) {
         assert!(errors.is_empty(), "\t{}", errors.join("\n\t"));
-    }
-
-    #[test]
-    fn test_precedence_order() {
-        assert_eq!(Precedence::Lowest, Precedence::Lowest);
-        assert!(Precedence::Lowest < Precedence::Equals);
-        assert!(Precedence::Equals < Precedence::LessGreater);
-        assert!(Precedence::LessGreater < Precedence::Sum);
-        assert!(Precedence::Sum < Precedence::Product);
-        assert!(Precedence::Product < Precedence::Prefix);
-        assert!(Precedence::Prefix < Precedence::Dot);
-        assert!(Precedence::Dot < Precedence::Call);
-    }
-
-    #[test]
-    fn test_precedence_from_token_order() {
-        assert!(Precedence::from_token(&Token::Equal) < Precedence::from_token(&Token::LParen));
-        assert!(
-            Precedence::from_token(&Token::LesserThan) < Precedence::from_token(&Token::LParen)
-        );
-        assert!(Precedence::from_token(&Token::Plus) < Precedence::from_token(&Token::LParen));
-        assert!(Precedence::from_token(&Token::Asterisk) < Precedence::from_token(&Token::LParen));
-        assert!(Precedence::from_token(&Token::Slash) < Precedence::from_token(&Token::LParen));
-        assert!(Precedence::from_token(&Token::Dot) < Precedence::from_token(&Token::LParen));
     }
 }

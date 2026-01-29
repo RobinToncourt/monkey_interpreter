@@ -102,6 +102,11 @@ pub enum Expression {
     Float(f64),
     String(String),
     Boolean(bool),
+    Array(Vec<Expression>),
+    Indexing {
+        left: Box<Expression>,
+        index: Box<Expression>,
+    },
     Prefix {
         operator: String,
         right: Box<Expression>,
@@ -134,6 +139,15 @@ impl Display for Expression {
             Self::Float(value) => write!(f, "{value}"),
             Self::String(value) => write!(f, "{value}"),
             Self::Boolean(value) => write!(f, "{value}"),
+            Self::Array(elements) => {
+                let elements = elements
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "[{elements}]")
+            }
+            Self::Indexing { left, index } => write!(f, "({left}[{index}])"),
             Self::Prefix { operator, right } => write!(f, "({operator}{right})"),
             Self::Infix {
                 left,

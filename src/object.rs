@@ -11,6 +11,7 @@ pub enum Object {
     Float(f64),
     String(String),
     Boolean(bool),
+    Array(Vec<Object>),
     Function {
         parameters: Vec<Expression>,
         body: Statement,
@@ -49,6 +50,7 @@ impl Object {
             Self::Float(_) => String::from(Self::float_type_str()),
             Self::String(_) => String::from(Self::string_type_str()),
             Self::Boolean(_) => String::from(Self::boolean_type_str()),
+            Self::Array(_) => String::from("Array"),
             Self::Function { .. } => String::from("Function"),
             Self::BuiltIn(_) => String::from("BuiltIn"),
             Self::ReturnValue(_) => String::from("ReturnValue"),
@@ -63,6 +65,15 @@ impl Object {
             Self::Float(f) => format!("{f}"),
             Self::String(s) => s.clone(),
             Self::Boolean(b) => format!("{b}"),
+            Self::Array(elements) => {
+                let elements = elements
+                    .iter()
+                    .map(Self::inspect)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                format!("[{elements}]")
+            }
             Self::Function {
                 parameters,
                 body,

@@ -74,6 +74,14 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
         Expression::Float(f) => Object::Float(*f),
         Expression::String(value) => Object::String(value.clone()),
         Expression::Boolean(b) => Object::Boolean(*b),
+        Expression::Array(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| eval_expression(element, env))
+                .collect();
+            Object::Array(elements)
+        }
+        Expression::Indexing { left: _, index: _ } => todo!(),
         Expression::Prefix { operator, right } => {
             let right = eval_expression(right, env);
 

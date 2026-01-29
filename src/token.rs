@@ -30,6 +30,8 @@ pub enum Token {
     RParen,
     LBrace,
     RBrace,
+    RBracket,
+    LBracket,
     Dot,
 
     // Keywords.
@@ -94,6 +96,8 @@ impl Display for Token {
             Self::RParen => write!(f, ")"),
             Self::LBrace => write!(f, "{{"),
             Self::RBrace => write!(f, "}}"),
+            Self::LBracket => write!(f, "["),
+            Self::RBracket => write!(f, "]"),
             Self::Dot => write!(f, "."),
             Self::Function => write!(f, "function"),
             Self::Let => write!(f, "let"),
