@@ -81,7 +81,19 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
                 .collect();
             Object::Array(elements)
         }
-        Expression::Indexing { left: _, index: _ } => todo!(),
+        Expression::Indexing { left, index } => {
+            let array = eval_expression(left, env);
+            if is_error(&array) {
+                return array;
+            }
+
+            let index = eval_expression(index, env);
+            if is_error(&index) {
+                return index;
+            }
+
+            eval_index_expression(array, index)
+        }
         Expression::Prefix { operator, right } => {
             let right = eval_expression(right, env);
 
@@ -137,6 +149,39 @@ fn eval_block_statement(statements: &[Statement], env: &SharedEnv) -> Object {
     }
 
     result
+}
+
+fn eval_index_expression(array: Object, index: Object) -> Object {
+    let array_type = array.get_type();
+    match (array, index) {
+        (Object::Array(array), Object::Integer(i)) => eval_array_index_expression(&array, i),
+        (Object::String(s), Object::Integer(i)) => eval_string_index_expression(&s, i),
+        _ => Object::Error(format!("index operator not supported: '{array_type}'.")),
+    }
+}
+
+fn eval_array_index_expression(array: &[Object], index: i64) -> Object {
+    #[allow(clippy::cast_possible_wrap)]
+    if index < 0 || index >= array.len() as i64 {
+        return Object::Error(format!("index out of bounds: '{index}'."));
+    }
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    array.get(index as usize).cloned().unwrap()
+}
+
+fn eval_string_index_expression(s: &str, index: i64) -> Object {
+    #[allow(clippy::cast_possible_wrap)]
+    if index < 0 || index >= s.len() as i64 {
+        return Object::Error(format!("index out of bounds: '{index}'."));
+    }
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    s.chars()
+        .nth(index as usize)
+        .map(String::from)
+        .map(Object::String)
+        .unwrap()
 }
 
 fn eval_prefix_expression(operator: &str, right: &Object) -> Object {
@@ -756,11 +801,15 @@ mod evaluator_tests {
             (r#"len("Hello, World!")"#, Box::new(13_i64)),
             (
                 r#"len(1)"#,
-                Box::new("argument to 'len' not supported, expected 'String' got 'Integer'."),
+                Box::new(Result::<(), &str>::Err(
+                    "argument to 'len' not supported, expected 'String' or 'Array' got 'Integer'.",
+                )),
             ),
             (
                 r#"len("one", "two")"#,
-                Box::new("wrong number of arguments. got=2, want=1."),
+                Box::new(Result::<(), &str>::Err(
+                    "wrong number of arguments. got=2, want=1.",
+                )),
             ),
         ];
 
@@ -782,17 +831,21 @@ mod evaluator_tests {
             (r#"int("42")"#, Box::new(42_i64)),
             (
                 r#"int("abc")"#,
-                Box::new("could not parse: 'abc' to Integer."),
+                Box::new(Result::<(), &str>::Err(
+                    "could not parse: 'abc' to Integer.",
+                )),
             ),
             (
                 r#"int(fn(x){return x;})"#,
-                Box::new(
+                Box::new(Result::<(), &str>::Err(
                     "argument to 'int' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
-                ),
+                )),
             ),
             (
                 r#"int(42, 42)"#,
-                Box::new("wrong number of arguments. got=2, want=1."),
+                Box::new(Result::<(), &str>::Err(
+                    "wrong number of arguments. got=2, want=1.",
+                )),
             ),
         ];
 
@@ -809,17 +862,19 @@ mod evaluator_tests {
             (r#"float("42.0")"#, Box::new(42.0_f64)),
             (
                 r#"float("abc")"#,
-                Box::new("could not parse: 'abc' to Float."),
+                Box::new(Result::<(), &str>::Err("could not parse: 'abc' to Float.")),
             ),
             (
                 r#"float(fn(x){return x;})"#,
-                Box::new(
+                Box::new(Result::<(), &str>::Err(
                     "argument to 'float' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
-                ),
+                )),
             ),
             (
                 r#"float(42.0, 42.0)"#,
-                Box::new("wrong number of arguments. got=2, want=1."),
+                Box::new(Result::<(), &str>::Err(
+                    "wrong number of arguments. got=2, want=1.",
+                )),
             ),
         ];
 
@@ -839,17 +894,21 @@ mod evaluator_tests {
             (r#"boolean("false")"#, Box::new(false)),
             (
                 r#"boolean("abc")"#,
-                Box::new("could not parse: 'abc' to boolean."),
+                Box::new(Result::<(), &str>::Err(
+                    "could not parse: 'abc' to boolean.",
+                )),
             ),
             (
                 r#"boolean(fn(x){return x;})"#,
-                Box::new(
+                Box::new(Result::<(), &str>::Err(
                     "argument to 'boolean' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
-                ),
+                )),
             ),
             (
                 r#"boolean(true, false)"#,
-                Box::new("wrong number of arguments. got=2, want=1."),
+                Box::new(Result::<(), &str>::Err(
+                    "wrong number of arguments. got=2, want=1.",
+                )),
             ),
         ];
 
@@ -858,38 +917,72 @@ mod evaluator_tests {
 
     #[test]
     fn test_builtin_function_string_cast() {
-        let tests: Vec<(&str, &str)> = vec![
-            (r#"string(42)"#, "42"),
-            (r#"string(42.42)"#, "42.42"),
-            (r#"string(true)"#, "true"),
-            (r#"string(false)"#, "false"),
-            (r#"string("42")"#, "42"),
-            (r#"string(fn(x){return x;})"#, "fn(x) {\n\treturn x;\n}"),
+        let tests: Vec<(&str, Box<dyn Any>)> = vec![
+            (r#"string(42)"#, Box::new("42")),
+            (r#"string(42.42)"#, Box::new("42.42")),
+            (r#"string(true)"#, Box::new("true")),
+            (r#"string(false)"#, Box::new("false")),
+            (r#"string("42")"#, Box::new("42")),
+            (
+                r#"string(fn(x){return x;})"#,
+                Box::new("fn(x) {\n\treturn x;\n}"),
+            ),
             (
                 r#"string(42, 42)"#,
-                "wrong number of arguments. got=2, want=1.",
+                Box::new(Result::<(), &str>::Err(
+                    "wrong number of arguments. got=2, want=1.",
+                )),
             ),
         ];
 
+        assert_tests(tests);
+    }
+
+    #[test]
+    fn test_array_literals() {
+        let input = "[1, 2 * 2, 3 + 3]";
+
+        let evaluated = test_eval(input);
+        let Object::Array(array) = evaluated else {
+            panic!("expected `Object::String` object, found {evaluated:?}")
+        };
+
         let mut all_tests_passed = true;
-        for (input, expected) in tests {
-            let evaluated = test_eval(input);
-            if let Object::String(s) = evaluated {
-                if s != expected {
-                    println!("\t'{s}' != '{expected}'");
-                    all_tests_passed = false;
-                }
-            } else if let Object::Error(e) = evaluated {
-                if e != expected {
-                    println!("\t'{e}' != '{expected}'");
-                    all_tests_passed = false;
-                }
-            } else {
-                println!("\t{:?}", evaluated);
-                all_tests_passed &= false;
-            }
-        }
+        let mut array = array.into_iter();
+        all_tests_passed &= test_integer_object(array.next().unwrap(), 1);
+        all_tests_passed &= test_integer_object(array.next().unwrap(), 4);
+        all_tests_passed &= test_integer_object(array.next().unwrap(), 6);
         assert!(all_tests_passed);
+    }
+
+    #[test]
+    fn test_array_indexing() {
+        let tests: Vec<(&str, Box<dyn Any>)> = vec![
+            ("[1, 2, 3][0]", Box::new(1_i64)),
+            ("[1, 2, 3][1]", Box::new(2_i64)),
+            ("[1, 2, 3][2]", Box::new(3_i64)),
+            ("let i = 0; [1][i]", Box::new(1_i64)),
+            ("[1, 2, 3][1 + 1]", Box::new(3_i64)),
+            ("let my_array = [1, 2, 3]; my_array[2]", Box::new(3_i64)),
+            (
+                "let my_array = [1, 2, 3]; my_array[0] + my_array[1] + my_array[2]",
+                Box::new(6_i64),
+            ),
+            (
+                "let my_array = [1, 2, 3]; let i = my_array[0]; my_array[i]",
+                Box::new(2_i64),
+            ),
+            (
+                "[1, 2, 3][3]",
+                Box::new(Result::<(), &str>::Err("index out of bounds: '3'.")),
+            ),
+            (
+                "[1, 2, 3][-1]",
+                Box::new(Result::<(), &str>::Err("index out of bounds: '-1'.")),
+            ),
+        ];
+
+        assert_tests(tests);
     }
 
     fn test_eval(input: &str) -> Object {
@@ -918,7 +1011,16 @@ mod evaluator_tests {
         } else if expected.is::<f64>() {
             test_float_object(object, *expected.downcast_ref::<f64>().unwrap())
         } else if expected.is::<&str>() {
-            test_error_object(object, *expected.downcast_ref::<&str>().unwrap())
+            test_string_object(object, expected.downcast_ref::<&str>().unwrap())
+        } else if expected.is::<Result<(), &str>>() {
+            test_error_object(
+                object,
+                expected
+                    .downcast_ref::<Result<(), &str>>()
+                    .unwrap()
+                    .err()
+                    .unwrap(),
+            )
         } else if expected.is::<Object>() {
             test_null_object(object)
         } else {
@@ -964,6 +1066,20 @@ mod evaluator_tests {
         let result = boolean == expected_bool;
         if !result {
             println!("\t{boolean} != {expected_bool}");
+        }
+        result
+    }
+
+    #[must_use]
+    fn test_string_object(object: Object, expected_string: &str) -> bool {
+        let Object::String(s) = object else {
+            println!("\tobject is not `Object::String`, got: '{object:?}'.");
+            return false;
+        };
+
+        let result = s == expected_string;
+        if !result {
+            println!("\t{expected_string} != {result}");
         }
         result
     }

@@ -42,15 +42,14 @@ fn len(arguments: &[Object]) -> Object {
         ));
     }
 
-    if let Object::String(string) = &arguments[0] {
-        #[allow(clippy::cast_possible_wrap)]
-        return Object::Integer(string.len() as i64);
+    match &arguments[0] {
+        Object::String(string) => Object::Integer(string.len() as i64),
+        Object::Array(array) => Object::Integer(array.len() as i64),
+        _ => Object::Error(format!(
+            "argument to 'len' not supported, expected 'String' or 'Array' got '{}'.",
+            arguments[0].get_type()
+        )),
     }
-
-    Object::Error(format!(
-        "argument to 'len' not supported, expected 'String' got '{}'.",
-        arguments[0].get_type()
-    ))
 }
 
 fn int(arguments: &[Object]) -> Object {
