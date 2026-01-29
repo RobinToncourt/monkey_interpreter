@@ -1,10 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::environment::SharedEnv;
-
 use crate::{
     ast::{Expression, Node, Program, Statement},
-    environment::Environment,
+    builtins::get_builtins,
+    environment::{Environment, SharedEnv},
     object::Object,
 };
 
@@ -227,18 +226,19 @@ fn eval_expressions(arguments: &[Expression], env: &SharedEnv) -> Result<Vec<Obj
 }
 
 fn apply_function(function: Object, arguments: &[Object]) -> Object {
-    let Object::Function {
-        parameters,
-        body,
-        env,
-    } = function
-    else {
-        return Object::Error(format!("Not a function: {}", function.get_type()));
-    };
-
-    let extended_env = extend_function_environment(parameters, env, arguments);
-    let evaluated = eval_statement(&body, &extended_env);
-    unwrap_return_value(evaluated)
+    match function {
+        Object::Function {
+            parameters,
+            body,
+            env,
+        } => {
+            let extended_env = extend_function_environment(parameters, env, arguments);
+            let evaluated = eval_statement(&body, &extended_env);
+            unwrap_return_value(evaluated)
+        }
+        Object::BuiltIn(func) => func(arguments),
+        _ => Object::Error(format!("Not a function: {}", function.get_type())),
+    }
 }
 
 fn extend_function_environment(
@@ -277,9 +277,15 @@ fn is_truthy(object: &Object) -> bool {
 }
 
 fn eval_identifier(name: &str, env: &SharedEnv) -> Object {
-    env.borrow_mut()
-        .get(name)
-        .unwrap_or(Object::Error(format!("identifier not found: {name}")))
+    if let Some(val) = env.borrow().get(name) {
+        return val;
+    }
+
+    if let Some(builtin) = get_builtins(name) {
+        return Object::BuiltIn(builtin);
+    }
+
+    Object::Error(format!("identifier not found: {name}"))
 }
 
 fn eval_integer_infix_expression(left: i64, operator: &str, right: i64) -> Object {
@@ -644,6 +650,41 @@ mod evaluator_tests {
         for (input, expected) in TESTS {
             let evaluated = test_eval(input);
             test_boolean_object(evaluated, expected);
+        }
+    }
+
+    #[test]
+    fn test_builtin_function_len() {
+        let tests: [(&str, Box<dyn Any>); 5] = [
+            (r#"len("")"#, Box::new(0_i64)),
+            (r#"len("four")"#, Box::new(4_i64)),
+            (r#"len("Hello, World!")"#, Box::new(13_i64)),
+            (
+                r#"len(1)"#,
+                Box::new("argument to 'len' not supported, got 'Integer'."),
+            ),
+            (
+                r#"len("one", "two")"#,
+                Box::new("wrong number of arguments. got=2, want=1."),
+            ),
+        ];
+
+        for (input, expected) in tests {
+            let evaluated = test_eval(input);
+
+            if expected.is::<i64>()
+                && let Object::Integer(value) = evaluated
+            {
+                let expected_len = expected.downcast::<i64>().unwrap();
+                assert_eq!(value, *expected_len);
+            } else if expected.is::<&str>()
+                && let Object::Error(error) = evaluated
+            {
+                let expected_string = expected.downcast::<&str>().unwrap();
+                assert_eq!(error, *expected_string);
+            } else {
+                panic!("incompatible types: evaluated '{evaluated:?}', expected: '{expected:?}'.");
+            }
         }
     }
 

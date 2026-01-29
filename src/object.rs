@@ -3,6 +3,8 @@ use crate::{
     environment::SharedEnv,
 };
 
+pub type BuiltInFunction = fn(arguments: &[Object]) -> Object;
+
 #[derive(Debug, Clone)]
 pub enum Object {
     Null,
@@ -14,6 +16,7 @@ pub enum Object {
         body: Statement,
         env: SharedEnv,
     },
+    BuiltIn(BuiltInFunction),
     ReturnValue(Box<Object>),
     Error(String),
 }
@@ -42,6 +45,7 @@ impl Object {
             Self::String(_) => String::from(Self::string_type_str()),
             Self::Boolean(_) => String::from(Self::boolean_type_str()),
             Self::Function { .. } => String::from("Function"),
+            Self::BuiltIn(_) => String::from("BuiltIn"),
             Self::ReturnValue(_) => String::from("ReturnValue"),
             Self::Error(_) => String::from("Error"),
         }
@@ -66,6 +70,7 @@ impl Object {
 
                 format!("fn({parameters}) {{\n\t{body}\n}}")
             }
+            Self::BuiltIn(_) => String::from("builtin function"),
             Self::ReturnValue(value) => value.inspect(),
             Self::Error(s) => format!("ERROR: {s}"),
         }

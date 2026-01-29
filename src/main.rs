@@ -2,6 +2,7 @@
 #![feature(string_into_chars)]
 
 mod ast;
+mod builtins;
 mod environment;
 mod evaluator;
 mod lexer;
