@@ -1,9 +1,8 @@
 use crate::{
     ast::{Expression, Statement},
+    builtins::BuiltInFunction,
     environment::SharedEnv,
 };
-
-pub type BuiltInFunction = fn(arguments: &[Object]) -> Object;
 
 #[derive(Debug, Clone)]
 pub enum Object {

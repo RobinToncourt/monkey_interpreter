@@ -661,7 +661,7 @@ mod evaluator_tests {
             (r#"len("Hello, World!")"#, Box::new(13_i64)),
             (
                 r#"len(1)"#,
-                Box::new("argument to 'len' not supported, got 'Integer'."),
+                Box::new("argument to 'len' not supported, expected 'String' got 'Integer'."),
             ),
             (
                 r#"len("one", "two")"#,

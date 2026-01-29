@@ -36,9 +36,6 @@ where
         if buffer.is_empty() {
             continue;
         }
-        if buffer == ".exit" {
-            break;
-        }
 
         let lexer = lexer::Lexer::new(buffer.to_owned());
         let mut parser = parser::Parser::new(lexer);
