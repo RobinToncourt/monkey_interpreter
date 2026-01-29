@@ -99,6 +99,7 @@ pub enum Expression {
     /// A `Token::Ident` can produce a value when at the right of a `Token::Assign`.
     Identifier(String),
     Integer(i64),
+    Float(f64),
     String(String),
     Boolean(bool),
     Prefix {
@@ -130,6 +131,7 @@ impl Display for Expression {
         match self {
             Self::Identifier(name) => write!(f, "{name}"),
             Self::Integer(value) => write!(f, "{value}"),
+            Self::Float(value) => write!(f, "{value}"),
             Self::String(value) => write!(f, "{value}"),
             Self::Boolean(value) => write!(f, "{value}"),
             Self::Prefix { operator, right } => write!(f, "({operator}{right})"),

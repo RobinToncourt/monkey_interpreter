@@ -32,6 +32,7 @@ pub enum Token {
     RParen,
     LBrace,
     RBrace,
+    Dot,
 
     // Keywords.
     Function,
@@ -95,6 +96,7 @@ impl Display for Token {
             Self::RParen => write!(f, ")"),
             Self::LBrace => write!(f, "{{"),
             Self::RBrace => write!(f, "}}"),
+            Self::Dot => write!(f, "."),
             Self::Function => write!(f, "function"),
             Self::Let => write!(f, "let"),
             Self::True => write!(f, "true"),

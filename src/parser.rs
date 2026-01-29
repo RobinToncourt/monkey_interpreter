@@ -7,7 +7,8 @@ use crate::{
 };
 
 type PrefixParseFn = fn(parser: &mut Parser) -> Result<Expression, ()>;
-type InfixParseFn = fn(parser: &mut Parser, expression: Expression) -> Result<Expression, ()>;
+type InfixParseFn =
+    fn(parser: &mut Parser, previous_expression: Expression) -> Result<Expression, ()>;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 enum Precedence {
@@ -17,6 +18,7 @@ enum Precedence {
     Sum,
     Product,
     Prefix,
+    Dot,
     Call,
 }
 
@@ -27,6 +29,7 @@ impl Precedence {
             Token::LesserThan | Token::GreaterThan => Self::LessGreater,
             Token::Plus | Token::Minus => Self::Sum,
             Token::Asterisk | Token::Slash => Self::Product,
+            Token::Dot => Self::Dot,
             Token::LParen => Self::Call,
             _ => Self::Lowest,
         }
@@ -126,6 +129,10 @@ impl Parser {
                 Self::parse_infix_expression as InfixParseFn,
             ),
             (
+                discriminant(&Token::Dot),
+                Self::parse_float_literal as InfixParseFn,
+            ),
+            (
                 discriminant(&Token::LParen),
                 Self::parse_call_expression as InfixParseFn,
             ),
@@ -220,7 +227,6 @@ impl Parser {
         })
     }
 
-    //#[log_call]
     fn parse_expression_statement(&mut self) -> Result<Statement, ()> {
         let expression = self.parse_expression(Precedence::Lowest);
 
@@ -232,7 +238,6 @@ impl Parser {
         Ok(Statement::Expression(Box::new(expression?)))
     }
 
-    //#[log_call]
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression, ()> {
         // TODO: handle case where `Self::cur_token` is `Option::None`,
         // TODO: can append when there is no `Token::Semicolon` at the end.
@@ -292,7 +297,6 @@ impl Parser {
         }
     }
 
-    //#[log_call]
     fn parse_integer_literal(&mut self) -> Result<Expression, ()> {
         let Token::Int(value) = self.cur_token.clone().unwrap() else {
             self.errors
@@ -309,6 +313,36 @@ impl Parser {
         Ok(Expression::Integer(value))
     }
 
+    // `InfixParseFn` signature forces the pass-by-value.
+    #[allow(clippy::needless_pass_by_value)]
+    fn parse_float_literal(&mut self, left_expression: Expression) -> Result<Expression, ()> {
+        let precedence = Precedence::from_token(self.cur_token.as_ref().unwrap());
+
+        self.next_token();
+
+        let right_expression = self.parse_expression(precedence)?;
+
+        let Expression::Integer(left_integer) = left_expression else {
+            self.errors.push(format!(
+                "Not an `Expression::Integer`, got '{left_expression:?}'."
+            ));
+            return Err(());
+        };
+
+        let Expression::Integer(right_integer) = right_expression else {
+            self.errors.push(format!(
+                "Not an `Expression::Integer`, got '{right_expression:?}'."
+            ));
+            return Err(());
+        };
+
+        // Should always succeed.
+        let float = format!("{left_integer}.{right_integer}")
+            .parse::<f64>()
+            .unwrap();
+        Ok(Expression::Float(float))
+    }
+
     fn parse_string_literal(&mut self) -> Result<Expression, ()> {
         let Token::Str(value) = self.cur_token.clone().unwrap() else {
             self.errors
@@ -319,7 +353,6 @@ impl Parser {
         Ok(Expression::String(value))
     }
 
-    //#[log_call]
     fn parse_prefix_expression(&mut self) -> Result<Expression, ()> {
         let token = self.cur_token.as_ref().unwrap();
         let operator = match token {
@@ -337,7 +370,6 @@ impl Parser {
         })
     }
 
-    //#[log_call]
     fn parse_infix_expression(&mut self, left_expression: Expression) -> Result<Expression, ()> {
         let precedence = Precedence::from_token(self.cur_token.as_ref().unwrap());
         let operator = self.cur_token.as_ref().unwrap().to_string();
@@ -352,7 +384,6 @@ impl Parser {
         })
     }
 
-    //#[log_call]
     fn parse_grouped_expression(&mut self) -> Result<Expression, ()> {
         self.next_token();
 
@@ -365,7 +396,6 @@ impl Parser {
         expression
     }
 
-    //#[log_call]
     fn parse_if_expression(&mut self) -> Result<Expression, ()> {
         if !self.expect_peek(&Token::LParen) {
             return Err(());
@@ -402,7 +432,6 @@ impl Parser {
         })
     }
 
-    //#[log_call]
     #[allow(clippy::unnecessary_wraps)] // TODO: remove once it returns expression.
     fn parse_block_statement(&mut self) -> Result<Statement, ()> {
         let mut statements = Vec::<Statement>::new();
@@ -519,8 +548,8 @@ impl Parser {
             .map_or(Precedence::Lowest, Precedence::from_token)
     }
 
-    /// Returns if the `Self::peek_token` is `token`,
-    /// advances token if true.
+    /// Returns if the `Self::peek_token` == `token`,
+    /// advances tokens if true.
     fn expect_peek(&mut self, token: &Token) -> bool {
         if let Some(peek) = self.peek_token.as_ref()
             && discriminant(peek) == discriminant(token)
@@ -557,7 +586,8 @@ mod parser_tests {
     fn test_parse_let_statements() {
         const INPUT: &str = "let x = 5;\
         let y = 10;\
-        let foo_bar = 838383;";
+        let foo_bar = 838383;\
+        let float = 4.5;";
 
         let expected_statements = vec![
             Statement::Let {
@@ -571,6 +601,10 @@ mod parser_tests {
             Statement::Let {
                 name: "foo_bar".to_owned(),
                 expression: Box::new(Expression::Integer(838383)),
+            },
+            Statement::Let {
+                name: "float".to_owned(),
+                expression: Box::new(Expression::Float(4.5)),
             },
         ];
 
@@ -615,7 +649,8 @@ mod parser_tests {
     fn test_parse_return_statement() {
         const INPUT: &str = "return 5;\
         return 10;\
-        return 993322;";
+        return 993322;\
+        return 42.0";
 
         let expected_statements = vec![
             Statement::Return {
@@ -626,6 +661,9 @@ mod parser_tests {
             },
             Statement::Return {
                 return_expression: Box::new(Expression::Integer(993322)),
+            },
+            Statement::Return {
+                return_expression: Box::new(Expression::Float(42.0)),
             },
         ];
 
@@ -693,6 +731,29 @@ mod parser_tests {
         };
 
         assert_eq!(integer, 5);
+    }
+
+    #[test]
+    fn test_float_literal_expression() {
+        const INPUT: &str = "5.0;";
+
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Float(float) = *expression else {
+            panic!("expression is not `Expression::Float`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(float, 5.0);
     }
 
     #[test]
@@ -899,7 +960,7 @@ mod parser_tests {
 
     #[test]
     fn test_call_expression_parsing() {
-        const INPUT: &str = "add(1, 2 * 3, 4 + 5);";
+        const INPUT: &str = "add(1, 2 * 3, 4 + 5, 6.7);";
 
         let lexer = Lexer::new(INPUT.to_owned());
         let mut parser = Parser::new(lexer);
@@ -923,7 +984,7 @@ mod parser_tests {
 
         test_identifier(function, "add");
 
-        assert_eq!(arguments.len(), 3);
+        assert_eq!(arguments.len(), 4);
 
         let mut arguments = arguments.into_iter();
         test_literal_expression(Box::new(arguments.next().unwrap()), Box::new(1_i64));
@@ -939,13 +1000,15 @@ mod parser_tests {
             "+",
             Box::new(5_i64),
         );
+        test_literal_expression(Box::new(arguments.next().unwrap()), Box::new(6.7));
     }
 
     #[test]
     fn test_parsing_prefix_expressions() {
-        let prefix_tests: [(&str, &str, Box<dyn Any>); 4] = [
+        let prefix_tests: [(&str, &str, Box<dyn Any>); 5] = [
             ("!5;", "!", Box::new(5_i64)),
             ("-15;", "-", Box::new(15_i64)),
+            ("-4.5;", "-", Box::new(4.5_f64)),
             ("!true;", "!", Box::new(true)),
             ("!false;", "!", Box::new(false)),
         ];
@@ -969,7 +1032,7 @@ mod parser_tests {
 
     #[test]
     fn test_parsing_infix_expressions() {
-        let infix_tests: [(&str, Box<dyn Any>, &str, Box<dyn Any>); 11] = [
+        let infix_tests: [(&str, Box<dyn Any>, &str, Box<dyn Any>); 12] = [
             ("5 + 5;", Box::new(5_i64), "+", Box::new(5_i64)),
             ("5 - 5;", Box::new(5_i64), "-", Box::new(5_i64)),
             ("5 * 5;", Box::new(5_i64), "*", Box::new(5_i64)),
@@ -978,6 +1041,7 @@ mod parser_tests {
             ("5 < 5;", Box::new(5_i64), "<", Box::new(5_i64)),
             ("5 == 5;", Box::new(5_i64), "==", Box::new(5_i64)),
             ("5 != 5;", Box::new(5_i64), "!=", Box::new(5_i64)),
+            ("4.5 != 5.4;", Box::new(4.5_f64), "!=", Box::new(5.4_f64)),
             ("true == true", Box::new(true), "==", Box::new(true)),
             ("true != false", Box::new(true), "!=", Box::new(false)),
             ("false == false", Box::new(false), "==", Box::new(false)),
@@ -1002,7 +1066,7 @@ mod parser_tests {
 
     #[test]
     fn test_operator_precedence_parsing() {
-        const TEST: [(&str, &str); 25] = [
+        const TEST: [(&str, &str); 27] = [
             ("-a * b", "((-a) * b)"),
             ("!-a", "(!(-a))"),
             ("a + b + c", "((a + b) + c)"),
@@ -1022,6 +1086,10 @@ mod parser_tests {
                 "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             ),
+            (
+                "3.4 + 5.6 * 7.8 == 9.1 * 2.3 + 4.5 * 6.7",
+                "((3.4 + (5.6 * 7.8)) == ((9.1 * 2.3) + (4.5 * 6.7)))",
+            ),
             ("true", "true"),
             ("false", "false"),
             ("3 > 5 == false", "((3 > 5) == false)"),
@@ -1035,6 +1103,10 @@ mod parser_tests {
             (
                 "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
                 "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            ),
+            (
+                "add(a, b, 1.1, 2.2 * 3.3, 4.4 + 5.5, add(6.6, 7.7 * 8.8))",
+                "add(a, b, 1.1, (2.2 * 3.3), (4.4 + 5.5), add(6.6, (7.7 * 8.8)))",
             ),
             (
                 "add(a + b + c * d / f + g)",
@@ -1113,6 +1185,8 @@ mod parser_tests {
             test_boolean_literal(expression, *expected.downcast_ref::<bool>().unwrap());
         } else if expected.is::<i64>() {
             test_integer_literal(expression, *expected.downcast_ref::<i64>().unwrap());
+        } else if expected.is::<f64>() {
+            test_float_literal(expression, *expected.downcast_ref::<f64>().unwrap());
         } else if expected.is::<&str>() {
             test_identifier(expression, expected.downcast_ref::<&str>().unwrap());
         } else {
@@ -1136,6 +1210,14 @@ mod parser_tests {
         assert_eq!(integer, expected_integer_value);
     }
 
+    fn test_float_literal(expression: Box<Expression>, expected_float_value: f64) {
+        let Expression::Float(float) = *expression else {
+            panic!("expression in not `Expression::Integer`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(float, expected_float_value);
+    }
+
     fn test_identifier(expression: Box<Expression>, expected_identifier: &str) {
         let Expression::Identifier(identifier) = *expression else {
             panic!("expression in not `Expression::Identifier`, got: '{expression:?}'.")
@@ -1156,7 +1238,8 @@ mod parser_tests {
         assert!(Precedence::LessGreater < Precedence::Sum);
         assert!(Precedence::Sum < Precedence::Product);
         assert!(Precedence::Product < Precedence::Prefix);
-        assert!(Precedence::Prefix < Precedence::Call);
+        assert!(Precedence::Prefix < Precedence::Dot);
+        assert!(Precedence::Dot < Precedence::Call);
     }
 
     #[test]
@@ -1168,5 +1251,6 @@ mod parser_tests {
         assert!(Precedence::from_token(&Token::Plus) < Precedence::from_token(&Token::LParen));
         assert!(Precedence::from_token(&Token::Asterisk) < Precedence::from_token(&Token::LParen));
         assert!(Precedence::from_token(&Token::Slash) < Precedence::from_token(&Token::LParen));
+        assert!(Precedence::from_token(&Token::Dot) < Precedence::from_token(&Token::LParen));
     }
 }

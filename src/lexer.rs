@@ -108,6 +108,7 @@ impl Iterator for Lexer {
             ',' => Some(Token::Comma),
             '{' => Some(Token::LBrace),
             '}' => Some(Token::RBrace),
+            '.' => Some(Token::Dot),
             '"' => {
                 let s = self.read_string();
                 Some(Token::Str(s))

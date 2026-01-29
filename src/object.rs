@@ -8,6 +8,7 @@ use crate::{
 pub enum Object {
     Null,
     Integer(i64),
+    Float(f64),
     String(String),
     Boolean(bool),
     Function {
@@ -29,6 +30,10 @@ impl Object {
         "Integer"
     }
 
+    pub const fn float_type_str() -> &'static str {
+        "Float"
+    }
+
     pub const fn string_type_str() -> &'static str {
         "String"
     }
@@ -41,6 +46,7 @@ impl Object {
         match self {
             Self::Null => String::from(Self::null_type_str()),
             Self::Integer(_) => String::from(Self::integer_type_str()),
+            Self::Float(_) => String::from(Self::float_type_str()),
             Self::String(_) => String::from(Self::string_type_str()),
             Self::Boolean(_) => String::from(Self::boolean_type_str()),
             Self::Function { .. } => String::from("Function"),
@@ -54,7 +60,8 @@ impl Object {
         match self {
             Self::Null => String::from("null"),
             Self::Integer(i) => format!("{i}"),
-            Self::String(s) => format!(r#""{s}""#),
+            Self::Float(f) => format!("{f}"),
+            Self::String(s) => s.clone(),
             Self::Boolean(b) => format!("{b}"),
             Self::Function {
                 parameters,

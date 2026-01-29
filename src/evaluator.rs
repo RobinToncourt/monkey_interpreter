@@ -7,6 +7,8 @@ use crate::{
     object::Object,
 };
 
+const FLOAT_COMP_ERROR_MARGIN: f64 = 0.01;
+
 pub fn eval<T>(node: T, env: &SharedEnv) -> Object
 where
     T: Into<Node>,
@@ -69,6 +71,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
     match expression {
         Expression::Identifier(name) => eval_identifier(name, env),
         Expression::Integer(i) => Object::Integer(*i),
+        Expression::Float(f) => Object::Float(*f),
         Expression::String(value) => Object::String(value.clone()),
         Expression::Boolean(b) => Object::Boolean(*b),
         Expression::Prefix { operator, right } => {
@@ -136,10 +139,33 @@ fn eval_prefix_expression(operator: &str, right: &Object) -> Object {
     }
 }
 
+fn eval_bang_operator_expression(right: &Object) -> Object {
+    match right {
+        Object::Null => Object::Boolean(true),
+        Object::Integer(_) | Object::Float(_) => Object::Boolean(false),
+        Object::Boolean(bool) => Object::Boolean(!bool),
+        _ => unreachable!(),
+    }
+}
+
+fn eval_minus_prefix_operator_expression(right: &Object) -> Object {
+    match right {
+        Object::Integer(value) => Object::Integer(-*value),
+        Object::Float(value) => Object::Float(-*value),
+        Object::Null | Object::Boolean(_) => {
+            Object::Error(format!("unknown operator: -{}", right.get_type()))
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn eval_infix_expression(left: &Object, operator: &str, right: &Object) -> Object {
     match (left, right) {
         (Object::Integer(left_value), Object::Integer(right_value)) => {
             eval_integer_infix_expression(*left_value, operator, *right_value)
+        }
+        (Object::Float(left_value), Object::Float(right_value)) => {
+            eval_float_infix_expression(*left_value, operator, *right_value)
         }
         (Object::String(left_str), Object::String(right_str)) => {
             eval_string_infix_expression(left_str, operator, right_str)
@@ -306,6 +332,24 @@ fn eval_integer_infix_expression(left: i64, operator: &str, right: i64) -> Objec
     }
 }
 
+fn eval_float_infix_expression(left: f64, operator: &str, right: f64) -> Object {
+    match operator {
+        "+" => Object::Float(left + right),
+        "-" => Object::Float(left - right),
+        "*" => Object::Float(left * right),
+        "/" => Object::Float(left / right),
+        ">" => Object::Boolean(left > right),
+        "<" => Object::Boolean(left < right),
+        "==" => Object::Boolean((left - right).abs() < FLOAT_COMP_ERROR_MARGIN),
+        "!=" => Object::Boolean((left - right).abs() > FLOAT_COMP_ERROR_MARGIN),
+        _ => Object::Error(format!(
+            "unknown operator: {} {operator} {}",
+            Object::float_type_str(),
+            Object::float_type_str()
+        )),
+    }
+}
+
 fn eval_string_infix_expression(left: &str, operator: &str, right: &str) -> Object {
     match operator {
         "+" => Object::String(format!("{left}{right}")),
@@ -343,25 +387,6 @@ fn eval_null_infix_expression(operator: &str) -> Object {
     }
 }
 
-fn eval_bang_operator_expression(right: &Object) -> Object {
-    match right {
-        Object::Null => Object::Boolean(true),
-        Object::Integer(_) => Object::Boolean(false),
-        Object::Boolean(bool) => Object::Boolean(!bool),
-        _ => unreachable!(),
-    }
-}
-
-fn eval_minus_prefix_operator_expression(right: &Object) -> Object {
-    match right {
-        Object::Integer(i64) => Object::Integer(-*i64),
-        Object::Null | Object::Boolean(_) => {
-            Object::Error(format!("unknown operator: -{}", right.get_type()))
-        }
-        _ => unreachable!(),
-    }
-}
-
 fn is_error(object: &Object) -> bool {
     matches!(object, Object::Error(_))
 }
@@ -374,7 +399,7 @@ mod evaluator_tests {
 
     #[test]
     fn test_eval_integer_expression() {
-        let tests: [(&str, i64); 15] = [
+        const TESTS: [(&str, i64); 15] = [
             ("5", 5),
             ("10", 10),
             ("-5", -5),
@@ -392,15 +417,45 @@ mod evaluator_tests {
             ("(5 + 10 * 2 + 15 / 3) * 2 + -10", 50),
         ];
 
-        for (input, expected) in tests {
+        let mut all_tests_passed = true;
+        for (input, expected) in TESTS {
             let evaluated = test_eval(input);
-            test_integer_object(evaluated, expected);
+            all_tests_passed &= test_integer_object(evaluated, expected);
         }
+        assert!(all_tests_passed);
+    }
+
+    #[test]
+    fn test_eval_float_expression() {
+        const TESTS: [(&str, f64); 15] = [
+            ("5.2", 5.2),
+            ("10.123456", 10.123456),
+            ("-5.12", -5.12),
+            ("-10.9", -10.9),
+            ("5.0 + 5.0 + 5.0 + 5.0 - 10.0", 10.0),
+            ("2.0 * 2.0 * 2.0 * 2.0 * 2.0", 32.0),
+            ("-50.1 + 100.2 - 50.1", 0.0),
+            ("5.1 * 2.0 + 10.1", 20.3),
+            ("5.1 + 2.0 * 10.0", 25.1),
+            ("20.0 + 2.0 * -10.0", 0.0),
+            ("50.0 / 2.0 * 2.0 + 10.0", 60.0),
+            ("2.0 * (5.0 + 10.0)", 30.0),
+            ("3.0 * 3.0 * 3.0 + 10.0", 37.0),
+            ("3.0 * (3.0 * 3.0) + 10.0", 37.0),
+            ("(5.0 + 10.0 * 2.0 + 15.0 / 3.0) * 2.0 + -10.0", 50.0),
+        ];
+
+        let mut all_tests_passed = true;
+        for (input, expected) in TESTS {
+            let evaluated = test_eval(input);
+            all_tests_passed &= test_float_object(evaluated, expected);
+        }
+        assert!(all_tests_passed);
     }
 
     #[test]
     fn test_eval_boolean_expression() {
-        let tests: [(&str, bool); 19] = [
+        let tests: [(&str, bool); 23] = [
             ("true", true),
             ("false", false),
             ("1 < 2", true),
@@ -411,6 +466,10 @@ mod evaluator_tests {
             ("1 != 1", false),
             ("1 == 2", false),
             ("1 != 2", true),
+            ("1.0 != 2.0", true),
+            ("1.0 == 1.0", true),
+            ("1.0 < 2.0", true),
+            ("1.0 > 2.0", false),
             ("true == true", true),
             ("false == false", true),
             ("true == false", false),
@@ -422,27 +481,32 @@ mod evaluator_tests {
             ("(1 > 2) == false", true),
         ];
 
+        let mut all_tests_passed = true;
         for (input, expected) in tests {
             let evaluated = test_eval(input);
-            test_boolean_object(evaluated, expected);
+            all_tests_passed &= test_boolean_object(evaluated, expected);
         }
+        assert!(all_tests_passed);
     }
 
     #[test]
     fn test_bang_operator() {
-        let tests: [(&str, bool); 6] = [
+        let tests: [(&str, bool); 7] = [
             ("!true", false),
             ("!false", true),
             ("!5", false),
+            ("!6.7", false),
             ("!!true", true),
             ("!!false", false),
             ("!!5", true),
         ];
 
+        let mut all_tests_passed = true;
         for (input, expected) in tests {
             let evaluated = test_eval(input);
-            test_boolean_object(evaluated, expected);
+            all_tests_passed &= test_boolean_object(evaluated, expected);
         }
+        assert!(all_tests_passed);
     }
 
     #[test]
@@ -457,16 +521,12 @@ mod evaluator_tests {
             ("if (1 < 2) { 10 } else { 20 }", Box::new(10_i64)),
         ];
 
+        let mut all_tests_passed = true;
         for (input, expected) in tests {
             let evaluated = test_eval(input);
-            if expected.is::<i64>() {
-                test_integer_object(evaluated, *expected.downcast::<i64>().unwrap());
-            } else if expected.is::<Object>() {
-                test_null_object(*expected.downcast::<Object>().unwrap())
-            } else {
-                panic!("expected type not handled: '{:?}'.", expected.type_id())
-            }
+            all_tests_passed &= test_object(evaluated, expected);
         }
+        assert!(all_tests_passed);
     }
 
     #[test]
@@ -502,20 +562,26 @@ mod evaluator_tests {
                     return 10;\
                 };\
                 f(10);",
-                10,
+                20,
             ),
         ];
 
+        let mut all_tests_passed = true;
         for (input, expected) in test {
             let evaluated = test_eval(input);
-            test_integer_object(evaluated, expected);
+            all_tests_passed &= test_integer_object(evaluated, expected);
         }
+
+        let evaluated = test_eval("return 42.12;");
+        all_tests_passed &= test_float_object(evaluated, 42.12);
+        assert!(all_tests_passed);
     }
 
     #[test]
     fn test_error_handling() {
-        let tests: [(&str, &str); 9] = [
-            ("5 + true;", "type mismatch: Integer + Boolean."),
+        const TESTS: [(&str, &str); 10] = [
+            ("5 + true;", "type mismatch: Integer + Boolean"),
+            ("5.5 + true;", "type mismatch: Float + Boolean"),
             ("5 + true; 5;", "type mismatch: Integer + Boolean"),
             ("-true", "unknown operator: -Boolean"),
             ("true + false;", "unknown operator: Boolean + Boolean"),
@@ -539,26 +605,30 @@ mod evaluator_tests {
         ];
 
         let mut all_tests_passed = true;
-        for (input, expected) in tests {
+        for (input, expected) in TESTS {
             let evaluated = test_eval(input);
-            all_tests_passed = test_error_object(evaluated, expected);
+            all_tests_passed &= test_error_object(evaluated, expected);
         }
         assert!(all_tests_passed);
     }
 
     #[test]
     fn test_let_statements() {
-        let test: [(&str, i64); 4] = [
-            ("let a = 5; a;", 5),
-            ("let a = 5 * 5; a;", 25),
-            ("let a = 5; let b = a; b;", 5),
-            ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
+        let test: [(&str, Box<dyn Any>); 5] = [
+            ("let a = 5; a;", Box::new(5_i64)),
+            ("let a = 5.5; a;", Box::new(5.5_f64)),
+            ("let a = 5 * 5; a;", Box::new(25_i64)),
+            ("let a = 5; let b = a; b;", Box::new(5_i64)),
+            (
+                "let a = 5; let b = a; let c = a + b + 5; c;",
+                Box::new(15_i64),
+            ),
         ];
 
         let mut all_tests_passed = true;
         for (input, expected) in test {
             let evaluated = test_eval(input);
-            all_tests_passed = test_integer_object(evaluated, expected);
+            all_tests_passed &= test_object(evaluated, expected);
         }
         assert!(all_tests_passed);
     }
@@ -585,19 +655,34 @@ mod evaluator_tests {
 
     #[test]
     fn test_function_application() {
-        const TESTS: [(&str, i64); 6] = [
-            ("let identity = fn(x) { x; }; identity(5);", 5),
-            ("let identity = fn(x) { return x; }; identity(5);", 5),
-            ("let double = fn(x) { x * 2; }; double(5);", 10),
-            ("let add = fn(x, y) { x + y }; add(5, 5);", 10),
-            ("let add = fn(x, y) { x + y }; add(5 + 5, add(5, 5));", 20),
-            ("fn(x) { x; }(5)", 5),
+        let tests: [(&str, Box<dyn Any>); 7] = [
+            ("let identity = fn(x) { x; }; identity(5);", Box::new(5_i64)),
+            (
+                "let identity = fn(x) { return x; }; identity(5);",
+                Box::new(5_i64),
+            ),
+            (
+                "let double = fn(x) { x * 2; }; double(5);",
+                Box::new(10_i64),
+            ),
+            ("let add = fn(x, y) { x + y }; add(5, 5);", Box::new(10_i64)),
+            (
+                "let add = fn(x, y) { x + y }; add(5.5, 5.5);",
+                Box::new(11.0_f64),
+            ),
+            (
+                "let add = fn(x, y) { x + y }; add(5 + 5, add(5, 5));",
+                Box::new(20_i64),
+            ),
+            ("fn(x) { x; }(5)", Box::new(5_i64)),
         ];
 
-        for (input, expected) in TESTS {
+        let mut all_tests_passed = true;
+        for (input, expected) in tests {
             let evaluated = test_eval(input);
-            test_integer_object(evaluated, expected);
+            all_tests_passed &= test_object(evaluated, expected);
         }
+        assert!(all_tests_passed);
     }
 
     #[test]
@@ -611,7 +696,7 @@ mod evaluator_tests {
         add_two(2);";
 
         let evaluated = test_eval(INPUT);
-        test_integer_object(evaluated, 4);
+        assert!(test_integer_object(evaluated, 4));
     }
 
     #[test]
@@ -647,10 +732,12 @@ mod evaluator_tests {
             (r#""hello" != "world""#, true),
         ];
 
+        let mut all_tests_passed = true;
         for (input, expected) in TESTS {
             let evaluated = test_eval(input);
-            test_boolean_object(evaluated, expected);
+            all_tests_passed &= test_boolean_object(evaluated, expected);
         }
+        assert!(all_tests_passed);
     }
 
     #[test]
@@ -669,23 +756,132 @@ mod evaluator_tests {
             ),
         ];
 
+        let mut all_tests_passed = true;
         for (input, expected) in tests {
             let evaluated = test_eval(input);
+            all_tests_passed &= test_object(evaluated, expected);
+        }
+        assert!(all_tests_passed);
+    }
 
-            if expected.is::<i64>()
-                && let Object::Integer(value) = evaluated
-            {
-                let expected_len = expected.downcast::<i64>().unwrap();
-                assert_eq!(value, *expected_len);
-            } else if expected.is::<&str>()
-                && let Object::Error(error) = evaluated
-            {
-                let expected_string = expected.downcast::<&str>().unwrap();
-                assert_eq!(error, *expected_string);
+    #[test]
+    fn test_builtin_function_int_cast() {
+        let tests: Vec<(&str, Box<dyn Any>)> = vec![
+            (r#"int(42)"#, Box::new(42_i64)),
+            (r#"int(42.42)"#, Box::new(42_i64)),
+            (r#"int(true)"#, Box::new(1_i64)),
+            (r#"int(false)"#, Box::new(0_i64)),
+            (r#"int("42")"#, Box::new(42_i64)),
+            (
+                r#"int("abc")"#,
+                Box::new("could not parse: 'abc' to Integer."),
+            ),
+            (
+                r#"int(fn(x){return x;})"#,
+                Box::new(
+                    "argument to 'int' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
+                ),
+            ),
+            (
+                r#"int(42, 42)"#,
+                Box::new("wrong number of arguments. got=2, want=1."),
+            ),
+        ];
+
+        assert_tests(tests);
+    }
+
+    #[test]
+    fn test_builtin_function_float_cast() {
+        let tests: Vec<(&str, Box<dyn Any>)> = vec![
+            (r#"float(42)"#, Box::new(42.0_f64)),
+            (r#"float(42.42)"#, Box::new(42.42_f64)),
+            (r#"float(true)"#, Box::new(1.0_f64)),
+            (r#"float(false)"#, Box::new(0.0_f64)),
+            (r#"float("42.0")"#, Box::new(42.0_f64)),
+            (
+                r#"float("abc")"#,
+                Box::new("could not parse: 'abc' to Float."),
+            ),
+            (
+                r#"float(fn(x){return x;})"#,
+                Box::new(
+                    "argument to 'float' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
+                ),
+            ),
+            (
+                r#"float(42.0, 42.0)"#,
+                Box::new("wrong number of arguments. got=2, want=1."),
+            ),
+        ];
+
+        assert_tests(tests);
+    }
+
+    #[test]
+    fn test_builtin_function_boolean_cast() {
+        let tests: Vec<(&str, Box<dyn Any>)> = vec![
+            (r#"boolean(42)"#, Box::new(true)),
+            (r#"boolean(0)"#, Box::new(false)),
+            (r#"boolean(42.42)"#, Box::new(true)),
+            (r#"boolean(0.0)"#, Box::new(false)),
+            (r#"boolean(true)"#, Box::new(true)),
+            (r#"boolean(false)"#, Box::new(false)),
+            (r#"boolean("true")"#, Box::new(true)),
+            (r#"boolean("false")"#, Box::new(false)),
+            (
+                r#"boolean("abc")"#,
+                Box::new("could not parse: 'abc' to boolean."),
+            ),
+            (
+                r#"boolean(fn(x){return x;})"#,
+                Box::new(
+                    "argument to 'boolean' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
+                ),
+            ),
+            (
+                r#"boolean(true, false)"#,
+                Box::new("wrong number of arguments. got=2, want=1."),
+            ),
+        ];
+
+        assert_tests(tests);
+    }
+
+    #[test]
+    fn test_builtin_function_string_cast() {
+        let tests: Vec<(&str, &str)> = vec![
+            (r#"string(42)"#, "42"),
+            (r#"string(42.42)"#, "42.42"),
+            (r#"string(true)"#, "true"),
+            (r#"string(false)"#, "false"),
+            (r#"string("42")"#, "42"),
+            (r#"string(fn(x){return x;})"#, "fn(x) {\n\treturn x;\n}"),
+            (
+                r#"string(42, 42)"#,
+                "wrong number of arguments. got=2, want=1.",
+            ),
+        ];
+
+        let mut all_tests_passed = true;
+        for (input, expected) in tests {
+            let evaluated = test_eval(input);
+            if let Object::String(s) = evaluated {
+                if s != expected {
+                    println!("\t'{s}' != '{expected}'");
+                    all_tests_passed = false;
+                }
+            } else if let Object::Error(e) = evaluated {
+                if e != expected {
+                    println!("\t'{e}' != '{expected}'");
+                    all_tests_passed = false;
+                }
             } else {
-                panic!("incompatible types: evaluated '{evaluated:?}', expected: '{expected:?}'.");
+                println!("\t{:?}", evaluated);
+                all_tests_passed &= false;
             }
         }
+        assert!(all_tests_passed);
     }
 
     fn test_eval(input: &str) -> Object {
@@ -696,40 +892,93 @@ mod evaluator_tests {
         eval(program, &env)
     }
 
+    fn assert_tests(tests: Vec<(&str, Box<dyn Any>)>) {
+        let mut all_tests_passed = true;
+        for (input, expected) in tests {
+            let evaluated = test_eval(input);
+            all_tests_passed &= test_object(evaluated, expected);
+        }
+        assert!(all_tests_passed);
+    }
+
+    #[must_use]
+    fn test_object(object: Object, expected: Box<dyn Any>) -> bool {
+        if expected.is::<bool>() {
+            test_boolean_object(object, *expected.downcast_ref::<bool>().unwrap())
+        } else if expected.is::<i64>() {
+            test_integer_object(object, *expected.downcast_ref::<i64>().unwrap())
+        } else if expected.is::<f64>() {
+            test_float_object(object, *expected.downcast_ref::<f64>().unwrap())
+        } else if expected.is::<&str>() {
+            test_error_object(object, *expected.downcast_ref::<&str>().unwrap())
+        } else if expected.is::<Object>() {
+            test_null_object(object)
+        } else {
+            panic!("expected type not handled: '{:?}'.", expected.type_id())
+        }
+    }
+
+    #[must_use]
     fn test_integer_object(object: Object, expected_int: i64) -> bool {
         let Object::Integer(integer) = object else {
-            println!("object is not `Object::Integer`, got: '{object:?}'.");
+            println!("\tobject is not `Object::Integer`, got: '{object:?}'.");
             return false;
         };
 
         let result = integer == expected_int;
         if !result {
-            println!("{integer} != {expected_int}");
+            println!("\t{integer} != {expected_int}");
         }
         result
     }
 
-    fn test_boolean_object(object: Object, expected_bool: bool) {
-        let Object::Boolean(boolean) = object else {
-            panic!("object is not `Object::Boolean`, got: '{object:?}'.")
+    #[must_use]
+    fn test_float_object(object: Object, expected_float: f64) -> bool {
+        let Object::Float(float) = object else {
+            println!("\tobject is not `Object::Float`, got: '{object:?}'.");
+            return false;
         };
 
-        assert_eq!(boolean, expected_bool);
+        let result = (float - expected_float).abs() < FLOAT_COMP_ERROR_MARGIN;
+        if !result {
+            println!("\t{float} != {expected_float}");
+        }
+        result
     }
 
-    fn test_null_object(object: Object) {
-        assert!(matches!(object, Object::Null))
+    #[must_use]
+    fn test_boolean_object(object: Object, expected_bool: bool) -> bool {
+        let Object::Boolean(boolean) = object else {
+            println!("\tobject is not `Object::Boolean`, got: '{object:?}'.");
+            return false;
+        };
+
+        let result = boolean == expected_bool;
+        if !result {
+            println!("\t{boolean} != {expected_bool}");
+        }
+        result
     }
 
+    #[must_use]
+    fn test_null_object(object: Object) -> bool {
+        let result = matches!(object, Object::Null);
+        if !result {
+            println!("\tobject is not `Object::Null`, got: '{object:?}'.");
+        }
+        result
+    }
+
+    #[must_use]
     fn test_error_object(object: Object, expected_error: &str) -> bool {
         let Object::Error(error) = object else {
             println!("object is not `Object::Error`, got: '{object:?}'.");
             return false;
         };
 
-        let result = error == expected_error.to_owned();
+        let result = error == expected_error;
         if !result {
-            println!("{error} != {expected_error}");
+            println!("\t'{error}' != '{expected_error}'");
         }
         result
     }
