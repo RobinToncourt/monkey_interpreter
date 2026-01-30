@@ -96,4 +96,8 @@ impl Object {
     pub fn is_null(&self) -> bool {
         matches!(self, Self::Null)
     }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
 }

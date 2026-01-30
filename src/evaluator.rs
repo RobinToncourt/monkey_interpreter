@@ -48,10 +48,6 @@ fn eval_statement(statement: &Statement, env: &SharedEnv) -> Object {
 fn eval_let_statement(name: &str, expression: &Expression, env: &SharedEnv) -> Object {
     let value = eval_expression(expression, env);
 
-    if is_error(&value) {
-        return value;
-    }
-
     env.borrow_mut().set(name.to_owned(), value);
 
     Object::Null
@@ -60,7 +56,7 @@ fn eval_let_statement(name: &str, expression: &Expression, env: &SharedEnv) -> O
 fn eval_return_statement(return_expression: &Expression, env: &SharedEnv) -> Object {
     let return_value = eval_expression(return_expression, env);
 
-    if is_error(&return_value) {
+    if return_value.is_error() {
         return return_value;
     }
 
@@ -83,12 +79,12 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
         }
         Expression::Indexing { left, index } => {
             let array = eval_expression(left, env);
-            if is_error(&array) {
+            if array.is_error() {
                 return array;
             }
 
             let index = eval_expression(index, env);
-            if is_error(&index) {
+            if index.is_error() {
                 return index;
             }
 
@@ -97,7 +93,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
         Expression::Prefix { operator, right } => {
             let right = eval_expression(right, env);
 
-            if is_error(&right) {
+            if right.is_error() {
                 return right;
             }
 
@@ -110,13 +106,13 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
         } => {
             let left = eval_expression(left, env);
 
-            if is_error(&left) {
+            if left.is_error() {
                 return left;
             }
 
             let right = eval_expression(right, env);
 
-            if is_error(&right) {
+            if right.is_error() {
                 return right;
             }
 
@@ -243,15 +239,17 @@ fn eval_if_expression(
 ) -> Object {
     let condition = eval_expression(condition, env);
 
-    if is_error(&condition) {
+    if condition.is_error() {
         return condition;
     }
 
     if is_truthy(&condition) {
-        eval_statement(consequences, env)
+        let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())));
+        eval_statement(consequences, &extended_env)
     } else {
         alternatives.map_or(Object::Null, |alternatives| {
-            eval_statement(alternatives, env)
+            let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())));
+            eval_statement(alternatives, &extended_env)
         })
     }
 }
@@ -275,7 +273,7 @@ fn eval_call_expression(
 ) -> Object {
     let function = eval_expression(function, env);
 
-    if is_error(&function) {
+    if function.is_error() {
         return function;
     }
 
@@ -288,15 +286,12 @@ fn eval_call_expression(
     apply_function(function, &arguments)
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn eval_expressions(arguments: &[Expression], env: &SharedEnv) -> Result<Vec<Object>, Object> {
     let mut result = Vec::new();
 
     for arg in arguments {
         let evaluated = eval_expression(arg, env);
-
-        if is_error(&evaluated) {
-            return Err(evaluated);
-        }
 
         result.push(evaluated);
     }
@@ -438,10 +433,6 @@ fn eval_null_infix_expression(operator: &str) -> Object {
             Object::boolean_type_str()
         )),
     }
-}
-
-fn is_error(object: &Object) -> bool {
-    matches!(object, Object::Error(_))
 }
 
 #[cfg(test)]
@@ -933,6 +924,22 @@ mod evaluator_tests {
                     "wrong number of arguments. got=2, want=1.",
                 )),
             ),
+        ];
+
+        assert_tests(tests);
+    }
+
+    #[test]
+    fn test_builtin_function_is_error() {
+        let tests: Vec<(&str, Box<dyn Any>)> = vec![
+            (r#"is_error(42)"#, Box::new(false)),
+            (r#"is_error(42.42)"#, Box::new(false)),
+            (r#"is_error(true)"#, Box::new(false)),
+            (r#"is_error(false)"#, Box::new(false)),
+            (r#"is_error("42")"#, Box::new(false)),
+            (r#"let err = [][1]; is_error(err)"#, Box::new(true)),
+            (r#"is_error(1, 2, 3)"#, Box::new(false)),
+            (r#"let err = [][1]; is_error(1, err, 3)"#, Box::new(true)),
         ];
 
         assert_tests(tests);

@@ -10,6 +10,7 @@ pub fn get_builtins(name: &str) -> Option<BuiltInFunction> {
         "float" => Some(float),
         "boolean" => Some(boolean),
         "string" => Some(string),
+        "is_error" => Some(is_error),
         _ => None,
     }
 }
@@ -43,7 +44,9 @@ fn len(arguments: &[Object]) -> Object {
     }
 
     match &arguments[0] {
+        #[allow(clippy::cast_possible_wrap)]
         Object::String(string) => Object::Integer(string.len() as i64),
+        #[allow(clippy::cast_possible_wrap)]
         Object::Array(array) => Object::Integer(array.len() as i64),
         _ => Object::Error(format!(
             "argument to 'len' not supported, expected 'String' or 'Array' got '{}'.",
@@ -142,4 +145,8 @@ fn string(arguments: &[Object]) -> Object {
     }
 
     Object::String(arguments[0].inspect())
+}
+
+fn is_error(arguments: &[Object]) -> Object {
+    Object::Boolean(arguments.iter().any(Object::is_error))
 }
