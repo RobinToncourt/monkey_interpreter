@@ -101,3 +101,9 @@ impl Object {
         matches!(self, Self::Error(_))
     }
 }
+
+impl FromIterator<Object> for Object {
+    fn from_iter<T: IntoIterator<Item = Object>>(iter: T) -> Self {
+        Self::Array(iter.into_iter().collect())
+    }
+}

@@ -47,9 +47,7 @@ where
         }
 
         let evaluated = evaluator::eval(program, &env);
-        if !evaluated.is_null() {
-            println!("{}", evaluated.inspect());
-        }
+        println!("{}", evaluated.inspect());
     }
 }
 
@@ -69,7 +67,11 @@ where
         buffer.push(c);
     }
 
-    String::from_utf8(buffer).unwrap()
+    let utf8_line = String::from_utf8(buffer);
+    utf8_line.unwrap_or_else(|_| {
+        println!("Invalid UTF-8 input.");
+        String::new()
+    })
 }
 
 fn print_parser_errors<OUT>(output: &mut OUT, errors: &[String])

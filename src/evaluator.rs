@@ -441,6 +441,281 @@ mod evaluator_tests {
     use crate::{lexer::Lexer, parser::Parser};
     use std::any::Any;
 
+    mod builtins_tests {
+        use super::*;
+
+        #[test]
+        fn test_builtin_function_len() {
+            let tests: [(&str, Box<dyn Any>); 5] = [
+                (r#"len("")"#, Box::new(0_i64)),
+                (r#"len("four")"#, Box::new(4_i64)),
+                (r#"len("Hello, World!")"#, Box::new(13_i64)),
+                (
+                    r#"len(1)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "argument to 'len' not supported, expected 'String' or 'Array' got 'Integer'.",
+                    )),
+                ),
+                (
+                    r#"len("one", "two")"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            let mut all_tests_passed = true;
+            for (input, expected) in tests {
+                let evaluated = test_eval(input);
+                all_tests_passed &= test_object(evaluated, expected);
+            }
+            assert!(all_tests_passed);
+        }
+
+        #[test]
+        fn test_builtin_function_int_cast() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"int(42)"#, Box::new(42_i64)),
+                (r#"int(42.42)"#, Box::new(42_i64)),
+                (r#"int(true)"#, Box::new(1_i64)),
+                (r#"int(false)"#, Box::new(0_i64)),
+                (r#"int("42")"#, Box::new(42_i64)),
+                (
+                    r#"int("abc")"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "could not parse: 'abc' to Integer.",
+                    )),
+                ),
+                (
+                    r#"int(fn(x){return x;})"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "argument to 'int' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
+                    )),
+                ),
+                (
+                    r#"int(42, 42)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            assert_tests(tests);
+        }
+
+        #[test]
+        fn test_builtin_function_float_cast() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"float(42)"#, Box::new(42.0_f64)),
+                (r#"float(42.42)"#, Box::new(42.42_f64)),
+                (r#"float(true)"#, Box::new(1.0_f64)),
+                (r#"float(false)"#, Box::new(0.0_f64)),
+                (r#"float("42.0")"#, Box::new(42.0_f64)),
+                (
+                    r#"float("abc")"#,
+                    Box::new(Result::<(), &str>::Err("could not parse: 'abc' to Float.")),
+                ),
+                (
+                    r#"float(fn(x){return x;})"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "argument to 'float' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
+                    )),
+                ),
+                (
+                    r#"float(42.0, 42.0)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            assert_tests(tests);
+        }
+
+        #[test]
+        fn test_builtin_function_boolean_cast() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"boolean(42)"#, Box::new(true)),
+                (r#"boolean(0)"#, Box::new(false)),
+                (r#"boolean(42.42)"#, Box::new(true)),
+                (r#"boolean(0.0)"#, Box::new(false)),
+                (r#"boolean(true)"#, Box::new(true)),
+                (r#"boolean(false)"#, Box::new(false)),
+                (r#"boolean("true")"#, Box::new(true)),
+                (r#"boolean("false")"#, Box::new(false)),
+                (
+                    r#"boolean("abc")"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "could not parse: 'abc' to boolean.",
+                    )),
+                ),
+                (
+                    r#"boolean(fn(x){return x;})"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "argument to 'boolean' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
+                    )),
+                ),
+                (
+                    r#"boolean(true, false)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            assert_tests(tests);
+        }
+
+        #[test]
+        fn test_builtin_function_string_cast() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"string(42)"#, Box::new("42")),
+                (r#"string(42.42)"#, Box::new("42.42")),
+                (r#"string(true)"#, Box::new("true")),
+                (r#"string(false)"#, Box::new("false")),
+                (r#"string("42")"#, Box::new("42")),
+                (
+                    r#"string(fn(x){return x;})"#,
+                    Box::new("fn(x) {\n\treturn x;\n}"),
+                ),
+                (
+                    r#"string(42, 42)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            assert_tests(tests);
+        }
+
+        #[test]
+        fn test_builtin_function_chars() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"string(chars("abc"))"#, Box::new("[a, b, c]")),
+                (r#"string(chars(""))"#, Box::new("[]")),
+                (
+                    r#"chars(42)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "argument to 'chars' must be 'String'. got 'Integer'.",
+                    )),
+                ),
+                (
+                    r#"chars("abc", "def")"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            let mut all_tests_passed = true;
+            for (input, expected) in tests {
+                let evaluated = test_eval(input);
+                if expected.is::<&str>() {
+                    all_tests_passed &=
+                        test_string_object(evaluated, *expected.downcast::<&str>().unwrap());
+                } else if expected.is::<Result<(), &str>>() {
+                    all_tests_passed &= test_error_object(
+                        evaluated,
+                        expected
+                            .downcast_ref::<Result<(), &str>>()
+                            .unwrap()
+                            .err()
+                            .unwrap(),
+                    );
+                } else {
+                    panic!("Invalid expected type")
+                }
+            }
+            assert!(all_tests_passed);
+        }
+
+        #[test]
+        fn test_builtin_function_type_of() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"type_of(42)"#, Box::new("Integer")),
+                (r#"type_of(42.42)"#, Box::new("Float")),
+                (r#"type_of("42")"#, Box::new("String")),
+                (r#"type_of(true)"#, Box::new("Boolean")),
+                (r#"type_of(false)"#, Box::new("Boolean")),
+                (r#"type_of([1, 2, 3])"#, Box::new("Array")),
+                (r#"type_of(fn(x){x})"#, Box::new("Function")),
+                (r#"type_of(type_of)"#, Box::new("BuiltIn")),
+                (r#"let err = [][1]; type_of(err)"#, Box::new("Error")),
+                (
+                    r#"type_of(1, 2)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            assert_tests(tests);
+        }
+
+        #[test]
+        fn test_builtin_function_is_error() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"is_error(42)"#, Box::new(false)),
+                (r#"is_error(42.42)"#, Box::new(false)),
+                (r#"is_error(true)"#, Box::new(false)),
+                (r#"is_error(false)"#, Box::new(false)),
+                (r#"is_error("42")"#, Box::new(false)),
+                (r#"let err = [][1]; is_error(err)"#, Box::new(true)),
+                (r#"is_error(1, 2, 3)"#, Box::new(false)),
+                (r#"let err = [][1]; is_error(1, err, 3)"#, Box::new(true)),
+            ];
+
+            assert_tests(tests);
+        }
+
+        #[test]
+        fn test_builtin_function_first() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"first([1, 2, 3])"#, Box::new(1_i64)),
+                (r#"first([])"#, Box::new(Object::Null)),
+                (
+                    r#"first(42)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "argument to 'first' must be 'Array'. got 'Integer'.",
+                    )),
+                ),
+                (
+                    r#"first([], [])"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            assert_tests(tests);
+        }
+
+        #[test]
+        fn test_builtin_function_last() {
+            let tests: Vec<(&str, Box<dyn Any>)> = vec![
+                (r#"last([1, 2, 3])"#, Box::new(3_i64)),
+                (r#"last([])"#, Box::new(Object::Null)),
+                (
+                    r#"last(42)"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "argument to 'last' must be 'Array'. got 'Integer'.",
+                    )),
+                ),
+                (
+                    r#"last([], [])"#,
+                    Box::new(Result::<(), &str>::Err(
+                        "wrong number of arguments. got=2, want=1.",
+                    )),
+                ),
+            ];
+
+            assert_tests(tests);
+        }
+
+        // TODO: add tests for 'rest', and 'push'.
+    }
+
     #[test]
     fn test_eval_integer_expression() {
         const TESTS: [(&str, i64); 15] = [
@@ -782,167 +1057,6 @@ mod evaluator_tests {
             all_tests_passed &= test_boolean_object(evaluated, expected);
         }
         assert!(all_tests_passed);
-    }
-
-    #[test]
-    fn test_builtin_function_len() {
-        let tests: [(&str, Box<dyn Any>); 5] = [
-            (r#"len("")"#, Box::new(0_i64)),
-            (r#"len("four")"#, Box::new(4_i64)),
-            (r#"len("Hello, World!")"#, Box::new(13_i64)),
-            (
-                r#"len(1)"#,
-                Box::new(Result::<(), &str>::Err(
-                    "argument to 'len' not supported, expected 'String' or 'Array' got 'Integer'.",
-                )),
-            ),
-            (
-                r#"len("one", "two")"#,
-                Box::new(Result::<(), &str>::Err(
-                    "wrong number of arguments. got=2, want=1.",
-                )),
-            ),
-        ];
-
-        let mut all_tests_passed = true;
-        for (input, expected) in tests {
-            let evaluated = test_eval(input);
-            all_tests_passed &= test_object(evaluated, expected);
-        }
-        assert!(all_tests_passed);
-    }
-
-    #[test]
-    fn test_builtin_function_int_cast() {
-        let tests: Vec<(&str, Box<dyn Any>)> = vec![
-            (r#"int(42)"#, Box::new(42_i64)),
-            (r#"int(42.42)"#, Box::new(42_i64)),
-            (r#"int(true)"#, Box::new(1_i64)),
-            (r#"int(false)"#, Box::new(0_i64)),
-            (r#"int("42")"#, Box::new(42_i64)),
-            (
-                r#"int("abc")"#,
-                Box::new(Result::<(), &str>::Err(
-                    "could not parse: 'abc' to Integer.",
-                )),
-            ),
-            (
-                r#"int(fn(x){return x;})"#,
-                Box::new(Result::<(), &str>::Err(
-                    "argument to 'int' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
-                )),
-            ),
-            (
-                r#"int(42, 42)"#,
-                Box::new(Result::<(), &str>::Err(
-                    "wrong number of arguments. got=2, want=1.",
-                )),
-            ),
-        ];
-
-        assert_tests(tests);
-    }
-
-    #[test]
-    fn test_builtin_function_float_cast() {
-        let tests: Vec<(&str, Box<dyn Any>)> = vec![
-            (r#"float(42)"#, Box::new(42.0_f64)),
-            (r#"float(42.42)"#, Box::new(42.42_f64)),
-            (r#"float(true)"#, Box::new(1.0_f64)),
-            (r#"float(false)"#, Box::new(0.0_f64)),
-            (r#"float("42.0")"#, Box::new(42.0_f64)),
-            (
-                r#"float("abc")"#,
-                Box::new(Result::<(), &str>::Err("could not parse: 'abc' to Float.")),
-            ),
-            (
-                r#"float(fn(x){return x;})"#,
-                Box::new(Result::<(), &str>::Err(
-                    "argument to 'float' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
-                )),
-            ),
-            (
-                r#"float(42.0, 42.0)"#,
-                Box::new(Result::<(), &str>::Err(
-                    "wrong number of arguments. got=2, want=1.",
-                )),
-            ),
-        ];
-
-        assert_tests(tests);
-    }
-
-    #[test]
-    fn test_builtin_function_boolean_cast() {
-        let tests: Vec<(&str, Box<dyn Any>)> = vec![
-            (r#"boolean(42)"#, Box::new(true)),
-            (r#"boolean(0)"#, Box::new(false)),
-            (r#"boolean(42.42)"#, Box::new(true)),
-            (r#"boolean(0.0)"#, Box::new(false)),
-            (r#"boolean(true)"#, Box::new(true)),
-            (r#"boolean(false)"#, Box::new(false)),
-            (r#"boolean("true")"#, Box::new(true)),
-            (r#"boolean("false")"#, Box::new(false)),
-            (
-                r#"boolean("abc")"#,
-                Box::new(Result::<(), &str>::Err(
-                    "could not parse: 'abc' to boolean.",
-                )),
-            ),
-            (
-                r#"boolean(fn(x){return x;})"#,
-                Box::new(Result::<(), &str>::Err(
-                    "argument to 'boolean' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got 'Function'.",
-                )),
-            ),
-            (
-                r#"boolean(true, false)"#,
-                Box::new(Result::<(), &str>::Err(
-                    "wrong number of arguments. got=2, want=1.",
-                )),
-            ),
-        ];
-
-        assert_tests(tests);
-    }
-
-    #[test]
-    fn test_builtin_function_string_cast() {
-        let tests: Vec<(&str, Box<dyn Any>)> = vec![
-            (r#"string(42)"#, Box::new("42")),
-            (r#"string(42.42)"#, Box::new("42.42")),
-            (r#"string(true)"#, Box::new("true")),
-            (r#"string(false)"#, Box::new("false")),
-            (r#"string("42")"#, Box::new("42")),
-            (
-                r#"string(fn(x){return x;})"#,
-                Box::new("fn(x) {\n\treturn x;\n}"),
-            ),
-            (
-                r#"string(42, 42)"#,
-                Box::new(Result::<(), &str>::Err(
-                    "wrong number of arguments. got=2, want=1.",
-                )),
-            ),
-        ];
-
-        assert_tests(tests);
-    }
-
-    #[test]
-    fn test_builtin_function_is_error() {
-        let tests: Vec<(&str, Box<dyn Any>)> = vec![
-            (r#"is_error(42)"#, Box::new(false)),
-            (r#"is_error(42.42)"#, Box::new(false)),
-            (r#"is_error(true)"#, Box::new(false)),
-            (r#"is_error(false)"#, Box::new(false)),
-            (r#"is_error("42")"#, Box::new(false)),
-            (r#"let err = [][1]; is_error(err)"#, Box::new(true)),
-            (r#"is_error(1, 2, 3)"#, Box::new(false)),
-            (r#"let err = [][1]; is_error(1, err, 3)"#, Box::new(true)),
-        ];
-
-        assert_tests(tests);
     }
 
     #[test]

@@ -10,7 +10,14 @@ pub fn get_builtins(name: &str) -> Option<BuiltInFunction> {
         "float" => Some(float),
         "boolean" => Some(boolean),
         "string" => Some(string),
+        "chars" => Some(chars),
+        "type_of" => Some(type_of),
         "is_error" => Some(is_error),
+        "is_null" => Some(is_null),
+        "first" => Some(first),
+        "last" => Some(last),
+        "rest" => Some(rest),
+        "push" => Some(push),
         _ => None,
     }
 }
@@ -147,6 +154,135 @@ fn string(arguments: &[Object]) -> Object {
     Object::String(arguments[0].inspect())
 }
 
+fn chars(arguments: &[Object]) -> Object {
+    if arguments.len() != 1 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=1.",
+            arguments.len()
+        ));
+    }
+
+    let Object::String(s) = &arguments[0] else {
+        return Object::Error(format!(
+            "argument to 'chars' must be 'String'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    s.chars()
+        .map(String::from)
+        .map(Object::String)
+        .collect::<Object>()
+}
+
+fn type_of(arguments: &[Object]) -> Object {
+    if arguments.len() != 1 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=1.",
+            arguments.len()
+        ));
+    }
+
+    Object::String(arguments[0].get_type())
+}
+
 fn is_error(arguments: &[Object]) -> Object {
     Object::Boolean(arguments.iter().any(Object::is_error))
+}
+
+fn is_null(arguments: &[Object]) -> Object {
+    if arguments.len() != 1 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=1.",
+            arguments.len()
+        ));
+    }
+
+    Object::Boolean(arguments[0].is_null())
+}
+
+fn first(arguments: &[Object]) -> Object {
+    if arguments.len() != 1 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=1.",
+            arguments.len()
+        ));
+    }
+
+    let Object::Array(array) = &arguments[0] else {
+        return Object::Error(format!(
+            "argument to 'first' must be 'Array'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    if !array.is_empty() {
+        return array.first().unwrap().clone();
+    }
+
+    Object::Null
+}
+
+fn last(arguments: &[Object]) -> Object {
+    if arguments.len() != 1 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=1.",
+            arguments.len()
+        ));
+    }
+
+    let Object::Array(array) = &arguments[0] else {
+        return Object::Error(format!(
+            "argument to 'last' must be 'Array'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    if !array.is_empty() {
+        return array.last().unwrap().clone();
+    }
+
+    Object::Null
+}
+
+fn rest(arguments: &[Object]) -> Object {
+    if arguments.len() != 1 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=1.",
+            arguments.len()
+        ));
+    }
+
+    let Object::Array(array) = &arguments[0] else {
+        return Object::Error(format!(
+            "argument to 'rest' must be 'Array'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    if !array.is_empty() {
+        return Object::Array(array[1..].to_vec());
+    }
+
+    Object::Null
+}
+
+fn push(arguments: &[Object]) -> Object {
+    if arguments.len() != 2 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=2.",
+            arguments.len()
+        ));
+    }
+
+    let Object::Array(array) = &arguments[0] else {
+        return Object::Error(format!(
+            "first argument to 'push' must be 'Array'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    let mut array = array.clone();
+    array.push(arguments[1].clone());
+    Object::Array(array)
 }

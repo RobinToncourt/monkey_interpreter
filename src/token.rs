@@ -41,6 +41,7 @@ pub enum Token {
     False,
     If,
     Else,
+    For,
     Return,
 }
 
@@ -65,6 +66,7 @@ impl Token {
             "false" => Self::False,
             "if" => Self::If,
             "else" => Self::Else,
+            "for" => Self::For,
             "return" => Self::Return,
             _ => Self::Ident(ident.to_string()),
         }
@@ -105,6 +107,7 @@ impl Display for Token {
             Self::False => write!(f, "false"),
             Self::If => write!(f, "if"),
             Self::Else => write!(f, "else"),
+            Self::For => write!(f, "for"),
             Self::Return => write!(f, "return"),
         }
     }
