@@ -18,6 +18,7 @@ pub fn get_builtins(name: &str) -> Option<BuiltInFunction> {
         "last" => Some(last),
         "rest" => Some(rest),
         "push" => Some(push),
+        "print" => Some(print),
         _ => None,
     }
 }
@@ -285,4 +286,12 @@ fn push(arguments: &[Object]) -> Object {
     let mut array = array.clone();
     array.push(arguments[1].clone());
     Object::Array(array)
+}
+
+fn print(arguments: &[Object]) -> Object {
+    for argument in arguments {
+        println!("{}", argument.inspect());
+    }
+
+    Object::Null
 }
