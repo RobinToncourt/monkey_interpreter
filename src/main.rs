@@ -1,6 +1,12 @@
 #![allow(dead_code)]
 #![feature(string_into_chars)]
 
+use crate::environment::Environment;
+use std::cell::RefCell;
+use std::fs::File;
+use std::io::Read;
+use std::rc::Rc;
+
 mod ast;
 mod builtins;
 mod environment;
@@ -12,7 +18,31 @@ mod repl;
 mod token;
 
 fn main() {
-    println!("Hello! This is the Monkey programming language!");
+    let args: Vec<String> = std::env::args().collect();
 
-    repl::start(std::io::stdin(), std::io::stdout());
+    if args.len() < 2 {
+        println!("Hello! This is the Monkey programming language!");
+        repl::start(std::io::stdin(), std::io::stdout());
+    } else {
+        let mut file = File::open(args[1].as_str()).unwrap();
+        let mut buffer = String::new();
+        let read = file.read_to_string(&mut buffer);
+        if read.is_err() {
+            println!("{read:?}");
+            return;
+        }
+
+        let lexer = lexer::Lexer::new(buffer);
+        let mut parser = parser::Parser::new(lexer);
+        let program = parser.parse_program();
+
+        if !parser.get_errors().is_empty() {
+            println!("errors: {:?}", parser.get_errors());
+            return;
+        }
+
+        let env = Rc::new(RefCell::new(Environment::new()));
+        let evaluated = evaluator::eval(program, &env);
+        println!("{}", evaluated.inspect());
+    }
 }
