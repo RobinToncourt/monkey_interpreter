@@ -24,7 +24,7 @@ where
     IN: Read,
     OUT: Write,
 {
-    let env = Rc::new(RefCell::new(Environment::new()).into());
+    let env = Rc::new(RefCell::new(Environment::new()));
 
     loop {
         output.write_all(PROMPT.as_bytes()).unwrap();

@@ -1,7 +1,5 @@
 use std::{fmt::Display, vec::IntoIter};
 
-use crate::wrapper::{F64, HashableHashMap};
-
 pub enum Node {
     Program(Program),
     Statement(Statement),
@@ -65,7 +63,7 @@ impl Display for Program {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Let {
         name: String,
@@ -96,16 +94,16 @@ impl Display for Statement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     /// A `Token::Ident` can produce a value when at the right of a `Token::Assign`.
     Identifier(String),
     Integer(i64),
-    Float(F64),
+    Float(f64),
     String(String),
     Boolean(bool),
     Array(Vec<Expression>),
-    Hash(HashableHashMap<Expression, Expression>),
+    Hash(Vec<(Expression, Expression)>),
     Indexing {
         left: Box<Expression>,
         index: Box<Expression>,

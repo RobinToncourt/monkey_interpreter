@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem::discriminant};
+use std::mem::discriminant;
 
 use crate::{
     ast::{Expression, Program, Statement},
@@ -272,7 +272,7 @@ impl Parser {
         let float = format!("{left_integer}.{right_integer}")
             .parse::<f64>()
             .unwrap();
-        Ok(Expression::Float(float.into()))
+        Ok(Expression::Float(float))
     }
 
     fn parse_string_literal(&mut self) -> Result<Expression, ()> {
@@ -490,7 +490,7 @@ impl Parser {
     }
 
     fn parse_hash_literal(&mut self) -> Result<Expression, ()> {
-        let mut pairs = HashMap::<Expression, Expression>::new();
+        let mut pairs = Vec::<(Expression, Expression)>::new();
 
         while self.peek_token != Some(Token::RBrace) {
             self.next_token();
@@ -505,7 +505,7 @@ impl Parser {
 
             let value = self.parse_expression(Precedence::Lowest)?;
 
-            pairs.insert(key, value);
+            pairs.push((key, value));
 
             if self.peek_token != Some(Token::RBrace) && !self.expect_peek(&Token::Comma) {
                 return Err(());
@@ -516,7 +516,7 @@ impl Parser {
             return Err(());
         }
 
-        Ok(Expression::Hash(pairs.into()))
+        Ok(Expression::Hash(pairs))
     }
 
     fn next_token(&mut self) {
@@ -562,7 +562,6 @@ impl Parser {
 mod parser_tests {
     use super::*;
     use crate::ast::{Expression, Statement};
-    use crate::wrapper::HashableHashMap;
     use std::any::Any;
 
     #[test]
@@ -730,7 +729,7 @@ mod parser_tests {
             panic!("expression is not `Expression::Float`, got: '{expression:?}'.")
         };
 
-        assert_eq!(*float, 5.0);
+        assert_eq!(float, 5.0);
     }
 
     #[test]
@@ -1210,9 +1209,8 @@ mod parser_tests {
 
         assert_eq!(map.len(), expected_pairs.len());
 
-        for (key, expected_value) in expected_pairs {
-            let key = Expression::String(key.to_owned());
-            let value = map[&key].clone();
+        for ((key, value), (expected_key, expected_value)) in map.into_iter().zip(expected_pairs) {
+            test_string_literal(Box::new(key), expected_key);
             test_literal_expression(Box::new(value), expected_value);
         }
     }
@@ -1228,9 +1226,8 @@ mod parser_tests {
 
         assert_eq!(map.len(), expected_pairs.len());
 
-        for (key, expected_value) in expected_pairs {
-            let key = Expression::Integer(key);
-            let value = map[&key].clone();
+        for ((key, value), (expected_key, expected_value)) in map.into_iter().zip(expected_pairs) {
+            test_integer_literal(Box::new(key), expected_key);
             test_string_literal(Box::new(value), expected_value);
         }
     }
@@ -1239,17 +1236,15 @@ mod parser_tests {
     fn test_parsing_hash_literals_boolean_keys() {
         let input = r#"{ true: 1, false: 0 }"#;
 
-        let expected_pairs: Vec<(bool, Box<dyn Any>)> =
-            vec![(true, Box::new(1_i64)), (false, Box::new(0_i64))];
+        let expected_pairs: Vec<(bool, i64)> = vec![(true, 1), (false, 0)];
 
         let map = check_hash_literal(input);
 
         assert_eq!(map.len(), expected_pairs.len());
 
-        for (key, expected_value) in expected_pairs {
-            let key = Expression::Boolean(key);
-            let value = map[&key].clone();
-            test_literal_expression(Box::new(value), expected_value);
+        for ((key, value), (expected_key, expected_value)) in map.into_iter().zip(expected_pairs) {
+            test_boolean_literal(Box::new(key), expected_key);
+            test_integer_literal(Box::new(value), expected_value);
         }
     }
 
@@ -1290,9 +1285,10 @@ mod parser_tests {
             ("three", Box::new(15_i64), "/", Box::new(5_i64)),
         ];
 
-        for (key, expected_left, expected_operator, expected_right) in expected_infix {
-            let key = Expression::String(key.to_owned());
-            let value = map[&key].clone();
+        for ((key, value), (expected_key, expected_left, expected_operator, expected_right)) in
+            map.into_iter().zip(expected_infix)
+        {
+            test_string_literal(Box::new(key), expected_key);
             test_infix_expression(
                 Box::new(value),
                 expected_left,
@@ -1335,7 +1331,7 @@ mod parser_tests {
         test_literal_expression(right, expected_right);
     }
 
-    fn check_hash_literal(input: &str) -> HashableHashMap<Expression, Expression> {
+    fn check_hash_literal(input: &str) -> Vec<(Expression, Expression)> {
         let lexer = Lexer::new(input.to_owned());
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
@@ -1398,7 +1394,7 @@ mod parser_tests {
             panic!("expression in not `Expression::Integer`, got: '{expression:?}'.")
         };
 
-        assert_eq!(*float, expected_float_value);
+        assert_eq!(float, expected_float_value);
     }
 
     fn test_identifier(expression: Box<Expression>, expected_identifier: &str) {

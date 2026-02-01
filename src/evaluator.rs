@@ -5,8 +5,9 @@ use crate::{
     builtins::get_builtins,
     environment::{Environment, SharedEnv},
     object::Object,
-    wrapper::{F64, FLOAT_COMP_ERROR_MARGIN},
 };
+
+const FLOAT_COMP_ERROR_MARGIN: f64 = 0.01;
 
 pub fn eval<T>(node: T, env: &SharedEnv) -> Object
 where
@@ -244,11 +245,11 @@ fn eval_if_expression(
     }
 
     if is_truthy(&condition) {
-        let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())).into());
+        let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())));
         eval_statement(consequences, &extended_env)
     } else {
         alternatives.map_or(Object::Null, |alternatives| {
-            let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())).into());
+            let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())));
             eval_statement(alternatives, &extended_env)
         })
     }
@@ -330,7 +331,7 @@ fn extend_function_environment(
         extended_env.set(name, arguments[i].clone());
     }
 
-    Rc::new(RefCell::new(extended_env).into())
+    Rc::new(RefCell::new(extended_env))
 }
 
 fn unwrap_return_value(object: Object) -> Object {
@@ -380,7 +381,7 @@ fn eval_integer_infix_expression(left: i64, operator: &str, right: i64) -> Objec
     }
 }
 
-fn eval_float_infix_expression(left: F64, operator: &str, right: F64) -> Object {
+fn eval_float_infix_expression(left: f64, operator: &str, right: f64) -> Object {
     match operator {
         "+" => Object::Float(left + right),
         "-" => Object::Float(left - right),
@@ -1170,7 +1171,7 @@ mod evaluator_tests {
             return false;
         };
 
-        let result = (float - expected_float.into()).abs() < FLOAT_COMP_ERROR_MARGIN;
+        let result = (float - expected_float).abs() < FLOAT_COMP_ERROR_MARGIN;
         if !result {
             println!("\t{float} != {expected_float}");
         }

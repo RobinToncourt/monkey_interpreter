@@ -1,21 +1,25 @@
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+};
+
 use crate::{
     ast::{Expression, Statement},
     builtins::BuiltInFunction,
     environment::SharedEnv,
-    wrapper::{F64, HashableHashMap},
 };
 
 // unpredictable_function_pointer_comparisons: BuiltInFunction shouldn't be compared.
 #[allow(unpredictable_function_pointer_comparisons)]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub enum Object {
     Null,
     Integer(i64),
-    Float(F64),
+    Float(f64),
     String(String),
     Boolean(bool),
     Array(Vec<Object>),
-    Hash(HashableHashMap<Object, Object>),
+    Hash(HashMap<u64, (Object, Object)>),
     Function {
         parameters: Vec<Expression>,
         body: Statement,
@@ -82,7 +86,7 @@ impl Object {
             Self::Hash(map) => {
                 let pairs = map
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k.inspect(), v.inspect()))
+                    .map(|(_hash, (k, v))| format!("{}: {}", k.inspect(), v.inspect()))
                     .collect::<Vec<String>>()
                     .join(", ");
 
@@ -114,10 +118,80 @@ impl Object {
     pub fn is_error(&self) -> bool {
         matches!(self, Self::Error(_))
     }
+
+    pub fn get_hash(&self) -> u64 {
+        let mut default_hasher = DefaultHasher::new();
+
+        match self {
+            Self::Integer(i) => i.hash(&mut default_hasher),
+            Self::Boolean(b) => b.hash(&mut default_hasher),
+            Self::String(s) => s.hash(&mut default_hasher),
+            _ => unimplemented!(),
+        }
+
+        default_hasher.finish()
+    }
 }
 
 impl FromIterator<Object> for Object {
     fn from_iter<T: IntoIterator<Item = Object>>(iter: T) -> Self {
         Self::Array(iter.into_iter().collect())
+    }
+}
+
+#[cfg(test)]
+mod object_tests {
+    use super::*;
+
+    #[test]
+    fn test_string_get_hash() {
+        let hello1 = Object::String(String::from("Hello World"));
+        let hello2 = Object::String(String::from("Hello World"));
+        let diff1 = Object::String(String::from("My name is Johnny"));
+        let diff2 = Object::String(String::from("My name is Johnny"));
+
+        assert_eq!(hello1.get_hash(), hello2.get_hash());
+        assert_eq!(diff1.get_hash(), diff2.get_hash());
+        assert_ne!(hello1.get_hash(), diff1.get_hash());
+    }
+
+    #[test]
+    fn test_integer_get_hash() {
+        let one1 = Object::Integer(1);
+        let one2 = Object::Integer(1);
+        let diff1 = Object::Integer(42);
+        let diff2 = Object::Integer(42);
+
+        assert_eq!(one1.get_hash(), one2.get_hash());
+        assert_eq!(diff1.get_hash(), diff2.get_hash());
+        assert_ne!(one1.get_hash(), diff1.get_hash());
+    }
+
+    #[test]
+    fn test_boolean_get_hash() {
+        let t1 = Object::Boolean(true);
+        let t2 = Object::Boolean(true);
+        let f1 = Object::Boolean(false);
+        let f2 = Object::Boolean(false);
+
+        assert_eq!(t1.get_hash(), t2.get_hash());
+        assert_eq!(f1.get_hash(), f2.get_hash());
+        assert_ne!(t1.get_hash(), f1.get_hash());
+    }
+
+    #[test]
+    fn test_diff_get_hash() {
+        let s = Object::String(String::from("1"));
+        let i = Object::Integer(1);
+        let b = Object::Boolean(true);
+
+        assert_ne!(s.get_hash(), i.get_hash());
+        assert_ne!(s.get_hash(), b.get_hash());
+
+        assert_ne!(i.get_hash(), s.get_hash());
+        assert_ne!(i.get_hash(), b.get_hash());
+
+        assert_ne!(b.get_hash(), s.get_hash());
+        assert_ne!(b.get_hash(), i.get_hash());
     }
 }

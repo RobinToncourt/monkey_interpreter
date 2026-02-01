@@ -14,7 +14,6 @@ mod object;
 mod parser;
 mod repl;
 mod token;
-mod wrapper;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -40,7 +39,7 @@ fn main() {
             return;
         }
 
-        let env = Rc::new(RefCell::new(Environment::new()).into());
+        let env = Rc::new(RefCell::new(Environment::new()));
         let evaluated = evaluator::eval(program, &env);
         println!("{}", evaluated.inspect());
     }
