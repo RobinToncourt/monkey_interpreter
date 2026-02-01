@@ -40,7 +40,7 @@ fn main() {
             return;
         }
 
-        let env = Rc::new(RefCell::new(Environment::new()));
+        let env = Rc::new(RefCell::new(Environment::new()).into());
         let evaluated = evaluator::eval(program, &env);
         println!("{}", evaluated.inspect());
     }

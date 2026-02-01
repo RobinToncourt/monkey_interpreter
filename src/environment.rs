@@ -1,19 +1,22 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
-use crate::object::Object;
+use crate::{
+    object::Object,
+    wrapper::{HashableHashMap, HashableRefCell},
+};
 
-pub type SharedEnv = Rc<RefCell<Environment>>;
+pub type SharedEnv = Rc<HashableRefCell<Environment>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Environment {
-    store: HashMap<String, Object>,
+    store: HashableHashMap<String, Object>,
     outer: Option<SharedEnv>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Self {
-            store: HashMap::new(),
+            store: HashMap::new().into(),
             outer: None,
         }
     }

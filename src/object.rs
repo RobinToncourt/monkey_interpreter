@@ -2,16 +2,20 @@ use crate::{
     ast::{Expression, Statement},
     builtins::BuiltInFunction,
     environment::SharedEnv,
+    wrapper::{F64, HashableHashMap},
 };
 
-#[derive(Debug, Clone)]
+// unpredictable_function_pointer_comparisons: BuiltInFunction shouldn't be compared.
+#[allow(unpredictable_function_pointer_comparisons)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Object {
     Null,
     Integer(i64),
-    Float(f64),
+    Float(F64),
     String(String),
     Boolean(bool),
     Array(Vec<Object>),
+    Hash(HashableHashMap<Object, Object>),
     Function {
         parameters: Vec<Expression>,
         body: Statement,
@@ -51,6 +55,7 @@ impl Object {
             Self::String(_) => String::from(Self::string_type_str()),
             Self::Boolean(_) => String::from(Self::boolean_type_str()),
             Self::Array(_) => String::from("Array"),
+            Self::Hash(_) => String::from("Hash"),
             Self::Function { .. } => String::from("Function"),
             Self::BuiltIn(_) => String::from("BuiltIn"),
             Self::ReturnValue(_) => String::from("ReturnValue"),
@@ -73,6 +78,15 @@ impl Object {
                     .join(", ");
 
                 format!("[{elements}]")
+            }
+            Self::Hash(map) => {
+                let pairs = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k.inspect(), v.inspect()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                format!("{{{pairs}}}")
             }
             Self::Function {
                 parameters,

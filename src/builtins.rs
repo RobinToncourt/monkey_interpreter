@@ -75,7 +75,7 @@ fn int(arguments: &[Object]) -> Object {
         Object::Null => Object::Integer(0),
         Object::Integer(value) => Object::Integer(*value),
         #[allow(clippy::cast_possible_truncation)]
-        Object::Float(value) => Object::Integer(*value as i64),
+        Object::Float(value) => Object::Integer(**value as i64),
         Object::String(value) => {
             let Ok(value) = value.parse::<i64>() else {
                 return Object::Error(format!("could not parse: '{value}' to Integer."));
@@ -99,17 +99,17 @@ fn float(arguments: &[Object]) -> Object {
     }
 
     match &arguments[0] {
-        Object::Null => Object::Float(0.0),
+        Object::Null => Object::Float(0.0.into()),
         #[allow(clippy::cast_precision_loss)]
-        Object::Integer(value) => Object::Float(*value as f64),
+        Object::Integer(value) => Object::Float((*value as f64).into()),
         Object::Float(value) => Object::Float(*value),
         Object::String(value) => {
             let Ok(value) = value.parse::<f64>() else {
                 return Object::Error(format!("could not parse: '{value}' to Float."));
             };
-            Object::Float(value)
+            Object::Float(value.into())
         }
-        Object::Boolean(bool) => Object::Float(f64::from(*bool)),
+        Object::Boolean(bool) => Object::Float(f64::from(*bool).into()),
         _ => Object::Error(format!(
             "argument to 'float' not supported, expected 'Integer', 'Float', 'Boolean' or 'String' got '{}'.",
             arguments[0].get_type()
@@ -129,7 +129,7 @@ fn boolean(arguments: &[Object]) -> Object {
         Object::Null => Object::Boolean(false),
         Object::Integer(value) => Object::Boolean(*value != 0),
         #[allow(clippy::cast_possible_truncation)]
-        Object::Float(value) => Object::Boolean(*value != 0.0),
+        Object::Float(value) => Object::Boolean(**value != 0.0),
         Object::String(value) => {
             let Ok(value) = value.parse::<bool>() else {
                 return Object::Error(format!("could not parse: '{value}' to boolean."));

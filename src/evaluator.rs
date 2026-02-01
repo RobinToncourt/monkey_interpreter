@@ -5,7 +5,7 @@ use crate::{
     builtins::get_builtins,
     environment::{Environment, SharedEnv},
     object::Object,
-    wrapper::FLOAT_COMP_ERROR_MARGIN,
+    wrapper::{F64, FLOAT_COMP_ERROR_MARGIN},
 };
 
 pub fn eval<T>(node: T, env: &SharedEnv) -> Object
@@ -66,7 +66,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
     match expression {
         Expression::Identifier(name) => eval_identifier(name, env),
         Expression::Integer(i) => Object::Integer(*i),
-        Expression::Float(f) => Object::Float(**f),
+        Expression::Float(f) => Object::Float(*f),
         Expression::String(value) => Object::String(value.clone()),
         Expression::Boolean(b) => Object::Boolean(*b),
         Expression::Array(elements) => {
@@ -244,11 +244,11 @@ fn eval_if_expression(
     }
 
     if is_truthy(&condition) {
-        let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())));
+        let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())).into());
         eval_statement(consequences, &extended_env)
     } else {
         alternatives.map_or(Object::Null, |alternatives| {
-            let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())));
+            let extended_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())).into());
             eval_statement(alternatives, &extended_env)
         })
     }
@@ -330,7 +330,7 @@ fn extend_function_environment(
         extended_env.set(name, arguments[i].clone());
     }
 
-    Rc::new(RefCell::new(extended_env))
+    Rc::new(RefCell::new(extended_env).into())
 }
 
 fn unwrap_return_value(object: Object) -> Object {
@@ -380,7 +380,7 @@ fn eval_integer_infix_expression(left: i64, operator: &str, right: i64) -> Objec
     }
 }
 
-fn eval_float_infix_expression(left: f64, operator: &str, right: f64) -> Object {
+fn eval_float_infix_expression(left: F64, operator: &str, right: F64) -> Object {
     match operator {
         "+" => Object::Float(left + right),
         "-" => Object::Float(left - right),
@@ -1110,7 +1110,7 @@ mod evaluator_tests {
         let lexer = Lexer::new(input.to_owned());
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
-        let env = Rc::new(RefCell::new(Environment::new()));
+        let env = Rc::new(RefCell::new(Environment::new()).into());
         eval(program, &env)
     }
 
@@ -1170,7 +1170,7 @@ mod evaluator_tests {
             return false;
         };
 
-        let result = (float - expected_float).abs() < FLOAT_COMP_ERROR_MARGIN;
+        let result = (float - expected_float.into()).abs() < FLOAT_COMP_ERROR_MARGIN;
         if !result {
             println!("\t{float} != {expected_float}");
         }
