@@ -1,3 +1,8 @@
+use std::cell::RefCell;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::rc::Rc;
+
 use crate::object::Object;
 
 pub type BuiltInFunction = fn(arguments: &[Object]) -> Object;
@@ -19,6 +24,9 @@ pub fn get_builtins(name: &str) -> Option<BuiltInFunction> {
         "rest" => Some(rest),
         "push" => Some(push),
         "print" => Some(print),
+        "file" => Some(file),
+        "read" => Some(read),
+        "write" => Some(write),
         _ => None,
     }
 }
@@ -294,4 +302,106 @@ fn print(arguments: &[Object]) -> Object {
     }
 
     Object::Null
+}
+
+fn file(arguments: &[Object]) -> Object {
+    if arguments.len() != 2 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=2.",
+            arguments.len()
+        ));
+    }
+
+    let Object::String(path) = &arguments[0] else {
+        return Object::Error(format!(
+            "first argument to 'file' must be 'String'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    let Object::String(option) = &arguments[1] else {
+        return Object::Error(format!(
+            "second argument to 'file' must be 'String'. got '{}'.",
+            arguments[1].get_type()
+        ));
+    };
+
+    let (read, write) = match option.as_str() {
+        "r" => (true, false),
+        "w" => (false, true),
+        "rw" | "wr" => (true, true),
+        _ => {
+            return Object::Error(format!(
+                "second argument to 'file' must be 'String'. got '{}'.",
+                arguments[0].get_type()
+            ));
+        }
+    };
+
+    let file = OpenOptions::new()
+        .read(read)
+        .write(write)
+        .append(true)
+        .open(path);
+
+    let Ok(file) = file else {
+        return Object::Error(format!(
+            "could not open file '{path}'. {}",
+            file.err().unwrap()
+        ));
+    };
+
+    Object::File(Rc::new(RefCell::new(file)))
+}
+
+fn read(arguments: &[Object]) -> Object {
+    if arguments.len() != 1 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=1.",
+            arguments.len()
+        ));
+    }
+
+    let Object::File(file) = &arguments[0] else {
+        return Object::Error(format!(
+            "first argument to 'read' must be 'File'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    let mut buffer = String::new();
+    let result = file.borrow_mut().read_to_string(&mut buffer);
+
+    if let Err(error) = result {
+        return Object::Error(error.to_string());
+    }
+
+    Object::String(buffer)
+}
+
+fn write(arguments: &[Object]) -> Object {
+    if arguments.len() != 2 {
+        return Object::Error(format!(
+            "wrong number of arguments. got={}, want=2.",
+            arguments.len()
+        ));
+    }
+
+    let Object::File(file) = &arguments[0] else {
+        return Object::Error(format!(
+            "first argument to 'write' must be 'File'. got '{}'.",
+            arguments[0].get_type()
+        ));
+    };
+
+    let Object::String(to_write) = &arguments[1] else {
+        return Object::Error(format!(
+            "second argument to 'write' must be 'String'. got '{}'.",
+            arguments[1].get_type()
+        ));
+    };
+
+    let result = file.borrow_mut().write_all(to_write.as_bytes());
+
+    result.map_or_else(|error| Object::Error(error.to_string()), |()| Object::Null)
 }

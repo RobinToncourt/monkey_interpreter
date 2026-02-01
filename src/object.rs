@@ -1,6 +1,9 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
+    fs::File,
     hash::{DefaultHasher, Hash, Hasher},
+    rc::Rc,
 };
 
 use crate::{
@@ -28,6 +31,7 @@ pub enum Object {
         body: Statement,
         env: SharedEnv,
     },
+    File(Rc<RefCell<File>>),
     BuiltIn(BuiltInFunction),
     ReturnValue(Box<Object>),
     Error(String),
@@ -64,6 +68,7 @@ impl Object {
             Self::Array(_) => String::from("Array"),
             Self::Hash(_) => String::from("Hash"),
             Self::Function { .. } => String::from("Function"),
+            Self::File(_) => String::from("File"),
             Self::BuiltIn(_) => String::from("BuiltIn"),
             Self::ReturnValue(_) => String::from("ReturnValue"),
             Self::Error(_) => String::from("Error"),
@@ -108,6 +113,7 @@ impl Object {
 
                 format!("fn({parameters}) {{\n\t{body}\n}}")
             }
+            Self::File(_) => String::from("File"),
             Self::BuiltIn(_) => String::from("builtin function"),
             Self::ReturnValue(value) => value.inspect(),
             Self::Error(s) => format!("ERROR: {s}"),
