@@ -9,6 +9,9 @@ use crate::{
     environment::SharedEnv,
 };
 
+#[derive(Debug)]
+pub struct NoHashVariant;
+
 // unpredictable_function_pointer_comparisons: BuiltInFunction shouldn't be compared.
 #[allow(unpredictable_function_pointer_comparisons)]
 #[derive(Debug, Clone)]
@@ -119,17 +122,18 @@ impl Object {
         matches!(self, Self::Error(_))
     }
 
-    pub fn get_hash(&self) -> u64 {
+    pub fn get_hash(&self) -> Result<u64, NoHashVariant> {
         let mut default_hasher = DefaultHasher::new();
 
         match self {
             Self::Integer(i) => i.hash(&mut default_hasher),
+            Self::Float(f) => f.to_bits().hash(&mut default_hasher),
             Self::Boolean(b) => b.hash(&mut default_hasher),
             Self::String(s) => s.hash(&mut default_hasher),
-            _ => unimplemented!(),
+            _ => return Err(NoHashVariant),
         }
 
-        default_hasher.finish()
+        Ok(default_hasher.finish())
     }
 }
 
@@ -150,9 +154,9 @@ mod object_tests {
         let diff1 = Object::String(String::from("My name is Johnny"));
         let diff2 = Object::String(String::from("My name is Johnny"));
 
-        assert_eq!(hello1.get_hash(), hello2.get_hash());
-        assert_eq!(diff1.get_hash(), diff2.get_hash());
-        assert_ne!(hello1.get_hash(), diff1.get_hash());
+        assert_eq!(hello1.get_hash().unwrap(), hello2.get_hash().unwrap());
+        assert_eq!(diff1.get_hash().unwrap(), diff2.get_hash().unwrap());
+        assert_ne!(hello1.get_hash().unwrap(), diff1.get_hash().unwrap());
     }
 
     #[test]
@@ -162,9 +166,9 @@ mod object_tests {
         let diff1 = Object::Integer(42);
         let diff2 = Object::Integer(42);
 
-        assert_eq!(one1.get_hash(), one2.get_hash());
-        assert_eq!(diff1.get_hash(), diff2.get_hash());
-        assert_ne!(one1.get_hash(), diff1.get_hash());
+        assert_eq!(one1.get_hash().unwrap(), one2.get_hash().unwrap());
+        assert_eq!(diff1.get_hash().unwrap(), diff2.get_hash().unwrap());
+        assert_ne!(one1.get_hash().unwrap(), diff1.get_hash().unwrap());
     }
 
     #[test]
@@ -174,9 +178,9 @@ mod object_tests {
         let f1 = Object::Boolean(false);
         let f2 = Object::Boolean(false);
 
-        assert_eq!(t1.get_hash(), t2.get_hash());
-        assert_eq!(f1.get_hash(), f2.get_hash());
-        assert_ne!(t1.get_hash(), f1.get_hash());
+        assert_eq!(t1.get_hash().unwrap(), t2.get_hash().unwrap());
+        assert_eq!(f1.get_hash().unwrap(), f2.get_hash().unwrap());
+        assert_ne!(t1.get_hash().unwrap(), f1.get_hash().unwrap());
     }
 
     #[test]
@@ -185,13 +189,13 @@ mod object_tests {
         let i = Object::Integer(1);
         let b = Object::Boolean(true);
 
-        assert_ne!(s.get_hash(), i.get_hash());
-        assert_ne!(s.get_hash(), b.get_hash());
+        assert_ne!(s.get_hash().unwrap(), i.get_hash().unwrap());
+        assert_ne!(s.get_hash().unwrap(), b.get_hash().unwrap());
 
-        assert_ne!(i.get_hash(), s.get_hash());
-        assert_ne!(i.get_hash(), b.get_hash());
+        assert_ne!(i.get_hash().unwrap(), s.get_hash().unwrap());
+        assert_ne!(i.get_hash().unwrap(), b.get_hash().unwrap());
 
-        assert_ne!(b.get_hash(), s.get_hash());
-        assert_ne!(b.get_hash(), i.get_hash());
+        assert_ne!(b.get_hash().unwrap(), s.get_hash().unwrap());
+        assert_ne!(b.get_hash().unwrap(), i.get_hash().unwrap());
     }
 }

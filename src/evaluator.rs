@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     ast::{Expression, Node, Program, Statement},
@@ -77,7 +77,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
                 .collect();
             Object::Array(elements)
         }
-        Expression::Hash(_pairs) => todo!(),
+        Expression::Hash(pairs) => eval_hash_literal(pairs, env),
         Expression::Indexing { left, index } => {
             let array = eval_expression(left, env);
             if array.is_error() {
@@ -148,23 +148,38 @@ fn eval_block_statement(statements: &[Statement], env: &SharedEnv) -> Object {
     result
 }
 
+fn eval_hash_literal(pairs: &[(Expression, Expression)], env: &SharedEnv) -> Object {
+    let mut result = HashMap::<u64, (Object, Object)>::new();
+
+    for (key, value) in pairs {
+        let key = eval_expression(key, env);
+        if key.is_error() {
+            return key;
+        }
+
+        let Ok(key_hash) = key.get_hash() else {
+            return Object::Error(format!("unusable as a key: '{}'.", key.get_type()));
+        };
+
+        let value = eval_expression(value, env);
+        if value.is_error() {
+            return value;
+        }
+
+        result.insert(key_hash, (key, value));
+    }
+
+    Object::Hash(result)
+}
+
 fn eval_index_expression(array: Object, index: Object) -> Object {
     let array_type = array.get_type();
     match (array, index) {
-        (Object::Array(array), Object::Integer(i)) => eval_array_index_expression(&array, i),
         (Object::String(s), Object::Integer(i)) => eval_string_index_expression(&s, i),
+        (Object::Array(array), Object::Integer(i)) => eval_array_index_expression(&array, i),
+        (Object::Hash(map), object) => eval_hash_index_expression(&map, &object),
         _ => Object::Error(format!("index operator not supported: '{array_type}'.")),
     }
-}
-
-fn eval_array_index_expression(array: &[Object], index: i64) -> Object {
-    #[allow(clippy::cast_possible_wrap)]
-    if index < 0 || index >= array.len() as i64 {
-        return Object::Error(format!("index out of bounds: '{index}'."));
-    }
-
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    array.get(index as usize).cloned().unwrap()
 }
 
 fn eval_string_index_expression(s: &str, index: i64) -> Object {
@@ -179,6 +194,30 @@ fn eval_string_index_expression(s: &str, index: i64) -> Object {
         .map(String::from)
         .map(Object::String)
         .unwrap()
+}
+
+fn eval_array_index_expression(array: &[Object], index: i64) -> Object {
+    #[allow(clippy::cast_possible_wrap)]
+    if index < 0 || index >= array.len() as i64 {
+        return Object::Error(format!("index out of bounds: '{index}'."));
+    }
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    array.get(index as usize).cloned().unwrap()
+}
+
+fn eval_hash_index_expression(map: &HashMap<u64, (Object, Object)>, key: &Object) -> Object {
+    let Ok(key_hash) = key.get_hash() else {
+        return Object::Error(format!("unusable as a key: '{}'.", key.get_type()));
+    };
+
+    map.get(&key_hash)
+        .cloned()
+        .map(|(_key, value)| value)
+        .unwrap_or(Object::Error(format!(
+            "no value for key: '{}'.",
+            key.inspect()
+        )))
 }
 
 fn eval_prefix_expression(operator: &str, right: &Object) -> Object {
@@ -440,7 +479,10 @@ fn eval_null_infix_expression(operator: &str) -> Object {
 mod evaluator_tests {
     use super::*;
     use crate::{lexer::Lexer, parser::Parser};
-    use std::any::Any;
+    use std::{
+        any::Any,
+        hash::{DefaultHasher, Hash, Hasher},
+    };
 
     mod builtins_tests {
         use super::*;
@@ -899,7 +941,7 @@ mod evaluator_tests {
 
     #[test]
     fn test_error_handling() {
-        const TESTS: [(&str, &str); 10] = [
+        const TESTS: [(&str, &str); 11] = [
             ("5 + true;", "type mismatch: Integer + Boolean"),
             ("5.5 + true;", "type mismatch: Float + Boolean"),
             ("5 + true; 5;", "type mismatch: Integer + Boolean"),
@@ -922,6 +964,10 @@ mod evaluator_tests {
             ),
             ("foobar", "identifier not found: foobar"),
             (r#""Hello" - "World!""#, "unknown operator: String - String"),
+            (
+                r#"{ "name": "Monkey" }[fn(x) { x }];"#,
+                "unusable as a key: 'Function'.",
+            ),
         ];
 
         let mut all_tests_passed = true;
@@ -1101,6 +1147,66 @@ mod evaluator_tests {
             (
                 "[1, 2, 3][-1]",
                 Box::new(Result::<(), &str>::Err("index out of bounds: '-1'.")),
+            ),
+        ];
+
+        assert_tests(tests);
+    }
+
+    #[test]
+    fn test_hash_literal() {
+        let input = r#"let two = "two";
+        {
+            "one": 10 - 9,
+            two: 1 + 1,
+            "thr" + "ee": 6 / 2,
+            4: 4,
+            true: 5,
+            false: 6,
+        }"#;
+
+        fn get_hash<T: Hash>(value: T) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        }
+
+        let expected: Vec<(u64, i64)> = vec![
+            (Object::String("one".to_owned()).get_hash().unwrap(), 1),
+            (Object::String("two".to_owned()).get_hash().unwrap(), 2),
+            (Object::String("three".to_owned()).get_hash().unwrap(), 3),
+            (Object::Integer(4).get_hash().unwrap(), 4),
+            (Object::Boolean(true).get_hash().unwrap(), 5),
+            (Object::Boolean(false).get_hash().unwrap(), 6),
+        ];
+
+        let evaluated = test_eval(input);
+        let Object::Hash(map) = evaluated else {
+            panic!("expected `Object::Hash` object, found {evaluated:?}");
+        };
+
+        let mut all_tests_passed = true;
+        for (key_hash, expected_value) in expected {
+            all_tests_passed &= test_integer_object(map[&key_hash].1.clone(), expected_value);
+        }
+        assert!(all_tests_passed);
+    }
+
+    #[test]
+    fn test_hash_indexing() {
+        let tests: Vec<(&str, Box<dyn Any>)> = vec![
+            (r#"{ "foo": 5 }["foo"]"#, Box::new(5_i64)),
+            (r#"let key = "foo"; {"foo": 5}[key]"#, Box::new(5_i64)),
+            (r#"{ 5: 5 }[5]"#, Box::new(5_i64)),
+            (r#"{ true: 5 }[true]"#, Box::new(5_i64)),
+            (r#"{ false: 5 }[false]"#, Box::new(5_i64)),
+            (
+                r#"{ "foo": 5 }["bar"]"#,
+                Box::new(Result::<(), &str>::Err("no value for key: 'bar'.")),
+            ),
+            (
+                r#"{}["foo"]"#,
+                Box::new(Result::<(), &str>::Err("no value for key: 'foo'.")),
             ),
         ];
 
