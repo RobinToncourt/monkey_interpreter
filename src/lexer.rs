@@ -111,6 +111,7 @@ impl Iterator for Lexer {
             '{' => Some(Token::LBrace),
             '}' => Some(Token::RBrace),
             '.' => Some(Token::Dot),
+            ':' => Some(Token::Colon),
             '"' => {
                 let s = self.read_string();
                 Some(Token::Str(s))
@@ -318,6 +319,7 @@ mod lexer_test {
             "foobar"
             "foo bar"
             [1, 2];
+            { "foo": "bar" }
         "#;
 
         let expected_tokens: Vec<Token> = vec![
@@ -402,6 +404,11 @@ mod lexer_test {
             Token::Int("2".to_owned()),
             Token::RBracket,
             Token::Semicolon,
+            Token::LBrace,
+            Token::Str("foo".to_owned()),
+            Token::Colon,
+            Token::Str("bar".to_owned()),
+            Token::RBrace,
         ];
 
         test_lexer(INPUT.to_owned(), expected_tokens);

@@ -33,6 +33,7 @@ pub enum Token {
     RBracket,
     LBracket,
     Dot,
+    Colon,
 
     // Keywords.
     Function,
@@ -101,6 +102,7 @@ impl Display for Token {
             Self::LBracket => write!(f, "["),
             Self::RBracket => write!(f, "]"),
             Self::Dot => write!(f, "."),
+            Self::Colon => write!(f, ":"),
             Self::Function => write!(f, "function"),
             Self::Let => write!(f, "let"),
             Self::True => write!(f, "true"),

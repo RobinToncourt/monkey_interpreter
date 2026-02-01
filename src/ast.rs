@@ -1,5 +1,7 @@
 use std::{fmt::Display, vec::IntoIter};
 
+use crate::wrapper::{F64, HashableHashMap};
+
 pub enum Node {
     Program(Program),
     Statement(Statement),
@@ -63,7 +65,7 @@ impl Display for Program {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
     Let {
         name: String,
@@ -94,15 +96,16 @@ impl Display for Statement {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expression {
     /// A `Token::Ident` can produce a value when at the right of a `Token::Assign`.
     Identifier(String),
     Integer(i64),
-    Float(f64),
+    Float(F64),
     String(String),
     Boolean(bool),
     Array(Vec<Expression>),
+    Hash(HashableHashMap<Expression, Expression>),
     Indexing {
         left: Box<Expression>,
         index: Box<Expression>,
@@ -146,6 +149,14 @@ impl Display for Expression {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "[{elements}]")
+            }
+            Self::Hash(pairs) => {
+                let pairs = pairs
+                    .iter()
+                    .map(|(key, value)| format!("{key}: {value}"))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "{{{pairs}}}")
             }
             Self::Indexing { left, index } => write!(f, "({left}[{index}])"),
             Self::Prefix { operator, right } => write!(f, "({operator}{right})"),

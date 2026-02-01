@@ -1,4 +1,4 @@
-use std::mem::discriminant;
+use std::{collections::HashMap, mem::discriminant};
 
 use crate::{
     ast::{Expression, Program, Statement},
@@ -179,6 +179,7 @@ impl Parser {
             Token::True | Token::False => Some(Self::parse_boolean as PrefixParseFn),
             Token::LParen => Some(Self::parse_grouped_expression as PrefixParseFn),
             Token::LBracket => Some(Self::parse_array_literal as PrefixParseFn),
+            Token::LBrace => Some(Self::parse_hash_literal as PrefixParseFn),
             Token::If => Some(Self::parse_if_expression as PrefixParseFn),
             Token::Function => Some(Self::parse_function_literal as PrefixParseFn),
             _ => None,
@@ -271,7 +272,7 @@ impl Parser {
         let float = format!("{left_integer}.{right_integer}")
             .parse::<f64>()
             .unwrap();
-        Ok(Expression::Float(float))
+        Ok(Expression::Float(float.into()))
     }
 
     fn parse_string_literal(&mut self) -> Result<Expression, ()> {
@@ -488,6 +489,36 @@ impl Parser {
         Ok(result)
     }
 
+    fn parse_hash_literal(&mut self) -> Result<Expression, ()> {
+        let mut pairs = HashMap::<Expression, Expression>::new();
+
+        while self.peek_token != Some(Token::RBrace) {
+            self.next_token();
+
+            let key = self.parse_expression(Precedence::Lowest)?;
+
+            if !self.expect_peek(&Token::Colon) {
+                return Err(());
+            }
+
+            self.next_token();
+
+            let value = self.parse_expression(Precedence::Lowest)?;
+
+            pairs.insert(key, value);
+
+            if self.peek_token != Some(Token::RBrace) && !self.expect_peek(&Token::Comma) {
+                return Err(());
+            }
+        }
+
+        if !self.expect_peek(&Token::RBrace) {
+            return Err(());
+        }
+
+        Ok(Expression::Hash(pairs.into()))
+    }
+
     fn next_token(&mut self) {
         self.cur_token = self.peek_token.take();
         self.peek_token = self.lexer.next();
@@ -531,6 +562,7 @@ impl Parser {
 mod parser_tests {
     use super::*;
     use crate::ast::{Expression, Statement};
+    use crate::wrapper::HashableHashMap;
     use std::any::Any;
 
     #[test]
@@ -540,26 +572,30 @@ mod parser_tests {
         let foo_bar = 838383;\
         let float = 4.5;";
 
-        let expected_statements = vec![
-            Statement::Let {
-                name: "x".to_owned(),
-                expression: Box::new(Expression::Integer(5)),
-            },
-            Statement::Let {
-                name: "y".to_owned(),
-                expression: Box::new(Expression::Integer(10)),
-            },
-            Statement::Let {
-                name: "foo_bar".to_owned(),
-                expression: Box::new(Expression::Integer(838383)),
-            },
-            Statement::Let {
-                name: "float".to_owned(),
-                expression: Box::new(Expression::Float(4.5)),
-            },
+        let expected_lets: Vec<(&str, Box<dyn Any>)> = vec![
+            ("x", Box::new(5_i64)),
+            ("y", Box::new(10_i64)),
+            ("foo_bar", Box::new(838383_i64)),
+            ("float", Box::new(4.5_f64)),
         ];
 
-        test_parser(INPUT.to_owned(), expected_statements);
+        let lexer = Lexer::new(INPUT.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), expected_lets.len());
+
+        let program_iter = program.into_iter();
+
+        let expected_statement_iter = expected_lets.into_iter();
+        let joined_iter = program_iter.zip(expected_statement_iter);
+        for (statement, (expected_name, expected_expression)) in joined_iter {
+            if let Statement::Let { name, expression } = statement {
+                assert_eq!(name, expected_name);
+                test_literal_expression(expression, expected_expression);
+            }
+        }
     }
 
     #[test]
@@ -603,38 +639,28 @@ mod parser_tests {
         return 993322;\
         return 42.0";
 
-        let expected_statements = vec![
-            Statement::Return {
-                return_expression: Box::new(Expression::Integer(5)),
-            },
-            Statement::Return {
-                return_expression: Box::new(Expression::Integer(10)),
-            },
-            Statement::Return {
-                return_expression: Box::new(Expression::Integer(993322)),
-            },
-            Statement::Return {
-                return_expression: Box::new(Expression::Float(42.0)),
-            },
+        let expected_returns: Vec<Box<dyn Any>> = vec![
+            Box::new(5_i64),
+            Box::new(10_i64),
+            Box::new(993322_i64),
+            Box::new(42.0_f64),
         ];
 
-        test_parser(INPUT.to_owned(), expected_statements);
-    }
-
-    fn test_parser(input: String, expected_statements: Vec<Statement>) {
-        let lexer = Lexer::new(input);
+        let lexer = Lexer::new(INPUT.to_owned());
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
         check_parser_errors(parser.get_errors());
 
-        assert_eq!(program.statements_len(), expected_statements.len());
+        assert_eq!(program.statements_len(), expected_returns.len());
 
         let program_iter = program.into_iter();
 
-        let expected_statement_iter = expected_statements.into_iter();
+        let expected_statement_iter = expected_returns.into_iter();
         let joined_iter = program_iter.zip(expected_statement_iter);
-        for (i, (statement, expected_statement)) in joined_iter.enumerate() {
-            assert_eq!(statement, expected_statement, "Invalid input at: {i}.");
+        for (statement, expected_return) in joined_iter {
+            if let Statement::Return { return_expression } = statement {
+                test_literal_expression(return_expression, expected_return);
+            }
         }
     }
 
@@ -704,7 +730,7 @@ mod parser_tests {
             panic!("expression is not `Expression::Float`, got: '{expression:?}'.")
         };
 
-        assert_eq!(float, 5.0);
+        assert_eq!(*float, 5.0);
     }
 
     #[test]
@@ -1074,7 +1100,6 @@ mod parser_tests {
         ];
 
         for (input, expected) in tests.into_iter() {
-            println!("\tinput: '{input}'");
             let lexer = Lexer::new(input.to_owned());
             let mut parser = Parser::new(lexer);
             let program = parser.parse_program();
@@ -1171,6 +1196,112 @@ mod parser_tests {
         test_infix_expression(index, Box::new(1_i64), "+", Box::new(1_i64));
     }
 
+    #[test]
+    fn test_parsing_hash_literals_string_keys() {
+        let input = r#"{ "one": 1, "two": 2, "three": 3 }"#;
+
+        let expected_pairs: Vec<(&str, Box<dyn Any>)> = vec![
+            ("one", Box::new(1_i64)),
+            ("two", Box::new(2_i64)),
+            ("three", Box::new(3_i64)),
+        ];
+
+        let map = check_hash_literal(input);
+
+        assert_eq!(map.len(), expected_pairs.len());
+
+        for (key, expected_value) in expected_pairs {
+            let key = Expression::String(key.to_owned());
+            let value = map[&key].clone();
+            test_literal_expression(Box::new(value), expected_value);
+        }
+    }
+
+    #[test]
+    fn test_parsing_hash_literals_integer_keys() {
+        let input = r#"{ 1: "one", 2: "two", 3: "three" }"#;
+
+        let expected_pairs: Vec<(i64, &str)> =
+            vec![(1_i64, "one"), (2_i64, "two"), (3_i64, "three")];
+
+        let map = check_hash_literal(input);
+
+        assert_eq!(map.len(), expected_pairs.len());
+
+        for (key, expected_value) in expected_pairs {
+            let key = Expression::Integer(key);
+            let value = map[&key].clone();
+            test_string_literal(Box::new(value), expected_value);
+        }
+    }
+
+    #[test]
+    fn test_parsing_hash_literals_boolean_keys() {
+        let input = r#"{ true: 1, false: 0 }"#;
+
+        let expected_pairs: Vec<(bool, Box<dyn Any>)> =
+            vec![(true, Box::new(1_i64)), (false, Box::new(0_i64))];
+
+        let map = check_hash_literal(input);
+
+        assert_eq!(map.len(), expected_pairs.len());
+
+        for (key, expected_value) in expected_pairs {
+            let key = Expression::Boolean(key);
+            let value = map[&key].clone();
+            test_literal_expression(Box::new(value), expected_value);
+        }
+    }
+
+    #[test]
+    fn test_parsing_empty_hash_literal() {
+        let input = "{}";
+
+        let lexer = Lexer::new(input.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Hash(pairs) = *expression else {
+            panic!("expression is not `Expression::Hash`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(pairs.len(), 0);
+    }
+
+    #[test]
+    fn test_parsing_hash_literals_with_expressions() {
+        let input = r#"{ "one": 0 + 1, "two": 10 - 8, "three": 15 / 5 }"#;
+
+        let map = check_hash_literal(input);
+
+        assert_eq!(map.len(), 3);
+
+        let expected_infix: Vec<(&str, Box<dyn Any>, &str, Box<dyn Any>)> = vec![
+            ("one", Box::new(0_i64), "+", Box::new(1_i64)),
+            ("two", Box::new(10_i64), "-", Box::new(8_i64)),
+            ("three", Box::new(15_i64), "/", Box::new(5_i64)),
+        ];
+
+        for (key, expected_left, expected_operator, expected_right) in expected_infix {
+            let key = Expression::String(key.to_owned());
+            let value = map[&key].clone();
+            test_infix_expression(
+                Box::new(value),
+                expected_left,
+                expected_operator,
+                expected_right,
+            );
+        }
+    }
+
     fn test_prefix_expression(
         expression: Box<Expression>,
         expected_operator: &str,
@@ -1204,6 +1335,26 @@ mod parser_tests {
         test_literal_expression(right, expected_right);
     }
 
+    fn check_hash_literal(input: &str) -> HashableHashMap<Expression, Expression> {
+        let lexer = Lexer::new(input.to_owned());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(parser.get_errors());
+
+        assert_eq!(program.statements_len(), 1);
+
+        let statement = program.into_iter().next().unwrap();
+        let Statement::Expression(expression) = statement else {
+            panic!("program.statement[0] is not `Statement::Expression`, got: '{statement:?}'.")
+        };
+
+        let Expression::Hash(pairs) = *expression else {
+            panic!("expression is not `Expression::Hash`, got: '{expression:?}'.")
+        };
+
+        pairs
+    }
+
     fn test_literal_expression(expression: Box<Expression>, expected: Box<dyn Any>) {
         if expected.is::<bool>() {
             test_boolean_literal(expression, *expected.downcast_ref::<bool>().unwrap());
@@ -1234,12 +1385,20 @@ mod parser_tests {
         assert_eq!(integer, expected_integer_value);
     }
 
+    fn test_string_literal(expression: Box<Expression>, expected_string_value: &str) {
+        let Expression::String(string) = *expression else {
+            panic!("expression is not `Expression::String`, got: '{expression:?}'.")
+        };
+
+        assert_eq!(string, expected_string_value);
+    }
+
     fn test_float_literal(expression: Box<Expression>, expected_float_value: f64) {
         let Expression::Float(float) = *expression else {
             panic!("expression in not `Expression::Integer`, got: '{expression:?}'.")
         };
 
-        assert_eq!(float, expected_float_value);
+        assert_eq!(*float, expected_float_value);
     }
 
     fn test_identifier(expression: Box<Expression>, expected_identifier: &str) {

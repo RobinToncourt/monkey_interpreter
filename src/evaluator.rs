@@ -5,9 +5,8 @@ use crate::{
     builtins::get_builtins,
     environment::{Environment, SharedEnv},
     object::Object,
+    wrapper::FLOAT_COMP_ERROR_MARGIN,
 };
-
-const FLOAT_COMP_ERROR_MARGIN: f64 = 0.01;
 
 pub fn eval<T>(node: T, env: &SharedEnv) -> Object
 where
@@ -67,7 +66,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
     match expression {
         Expression::Identifier(name) => eval_identifier(name, env),
         Expression::Integer(i) => Object::Integer(*i),
-        Expression::Float(f) => Object::Float(*f),
+        Expression::Float(f) => Object::Float(**f),
         Expression::String(value) => Object::String(value.clone()),
         Expression::Boolean(b) => Object::Boolean(*b),
         Expression::Array(elements) => {
@@ -77,6 +76,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
                 .collect();
             Object::Array(elements)
         }
+        Expression::Hash(_pairs) => todo!(),
         Expression::Indexing { left, index } => {
             let array = eval_expression(left, env);
             if array.is_error() {

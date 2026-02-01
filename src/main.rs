@@ -1,11 +1,9 @@
 #![allow(dead_code)]
 #![feature(string_into_chars)]
 
+use std::{cell::RefCell, fs::File, io::Read, rc::Rc};
+
 use crate::environment::Environment;
-use std::cell::RefCell;
-use std::fs::File;
-use std::io::Read;
-use std::rc::Rc;
 
 mod ast;
 mod builtins;
@@ -16,6 +14,7 @@ mod object;
 mod parser;
 mod repl;
 mod token;
+mod wrapper;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
