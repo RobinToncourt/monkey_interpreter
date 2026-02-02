@@ -21,6 +21,7 @@ enum Precedence {
     Dot,
     Call,
     Index,
+    Assign,
 }
 
 impl Precedence {
@@ -33,6 +34,7 @@ impl Precedence {
             Token::Dot => Self::Dot,
             Token::LParen => Self::Call,
             Token::LBracket => Self::Index,
+            Token::Assign => Self::Assign,
             _ => Self::Lowest,
         }
     }
@@ -89,6 +91,7 @@ impl Parser {
         match cur_token {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
+            Token::For => self.parse_for_statement(),
             _ => self.parse_expression_statement(),
         }
     }
@@ -131,6 +134,53 @@ impl Parser {
 
         Ok(Statement::Return {
             return_expression: Box::new(return_value?),
+        })
+    }
+
+    fn parse_for_statement(&mut self) -> Result<Statement, ()> {
+        if !self.expect_peek(&Token::LParen) {
+            return Err(());
+        }
+
+        self.next_token();
+
+        let initializer = self.parse_statement();
+
+        if self.cur_token != Some(Token::Semicolon) {
+            return Err(());
+        }
+
+        self.next_token();
+
+        let condition = self.parse_expression(Precedence::Lowest);
+
+        self.next_token();
+
+        if self.cur_token != Some(Token::Semicolon) {
+            return Err(());
+        }
+
+        self.next_token();
+
+        let step = self.parse_statement();
+
+        self.next_token();
+
+        if self.cur_token != Some(Token::RParen) {
+            return Err(());
+        }
+
+        if !self.expect_peek(&Token::LBrace) {
+            return Err(());
+        }
+
+        let body = self.parse_block_statement();
+
+        Ok(Statement::For {
+            initializer: Box::new(initializer?),
+            condition: Box::new(condition?),
+            step: Box::new(step?),
+            body: Box::new(body?),
         })
     }
 
@@ -199,6 +249,7 @@ impl Parser {
             Token::Dot => Some(Self::parse_float_literal as InfixParseFn),
             Token::LParen => Some(Self::parse_call_expression as InfixParseFn),
             Token::LBracket => Some(Self::parse_index_expression as InfixParseFn),
+            Token::Assign => Some(Self::parse_assign_expression as InfixParseFn),
             _ => None,
         }
     }
@@ -462,6 +513,28 @@ impl Parser {
         Ok(Expression::Indexing {
             left: Box::new(left),
             index: Box::new(index),
+        })
+    }
+
+    fn parse_assign_expression(&mut self, identifier: Expression) -> Result<Expression, ()> {
+        self.next_token();
+
+        let Expression::Identifier(identifier) = identifier else {
+            self.errors.push(format!(
+                "Not an `Expression::Identifier`, got '{identifier:?}'."
+            ));
+            return Err(());
+        };
+
+        let expression = self.parse_expression(Precedence::Lowest);
+
+        if self.peek_token == Some(Token::Semicolon) {
+            self.next_token();
+        }
+
+        Ok(Expression::Assign {
+            name: identifier,
+            expression: Box::new(expression?),
         })
     }
 

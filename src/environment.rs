@@ -24,6 +24,10 @@ impl Environment {
         result
     }
 
+    pub fn contains(&self, name: &str) -> bool {
+        self.store.contains_key(name)
+    }
+
     pub fn get(&self, name: &str) -> Option<Object> {
         let result = self.store.get(name).cloned();
 

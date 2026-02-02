@@ -72,6 +72,12 @@ pub enum Statement {
     Return {
         return_expression: Box<Expression>,
     },
+    For {
+        initializer: Box<Statement>,
+        condition: Box<Expression>,
+        step: Box<Statement>,
+        body: Box<Statement>,
+    },
     /// This is to be able to use expressions as statements.
     Expression(Box<Expression>),
     Block(Vec<Statement>),
@@ -82,6 +88,14 @@ impl Display for Statement {
         match self {
             Self::Let { name, expression } => write!(f, "let {name} = {expression};"),
             Self::Return { return_expression } => write!(f, "return {return_expression};"),
+            Self::For {
+                initializer,
+                condition,
+                step,
+                body,
+            } => {
+                write!(f, "for({initializer}; {condition}; {step}) {body}")
+            }
             Self::Expression(expression) => write!(f, "{expression}"),
             Self::Block(statements) => {
                 let output = statements
@@ -129,6 +143,10 @@ pub enum Expression {
     Call {
         function: Box<Expression>,
         arguments: Vec<Expression>,
+    },
+    Assign {
+        name: String,
+        expression: Box<Expression>,
     },
 }
 
@@ -197,6 +215,7 @@ impl Display for Expression {
                     .join(", ");
                 write!(f, "{function}({args})")
             }
+            Self::Assign { name, expression } => write!(f, "{name} = {expression};"),
         }
     }
 }

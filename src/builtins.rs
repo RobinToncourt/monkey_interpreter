@@ -26,7 +26,7 @@ pub fn get_builtins(name: &str) -> Option<BuiltInFunction> {
         "print" => Some(print),
         "file" => Some(file),
         "read" => Some(read),
-        "write" => Some(write),
+        "writeln" => Some(writeln),
         _ => None,
     }
 }
@@ -330,12 +330,7 @@ fn file(arguments: &[Object]) -> Object {
         "r" => (true, false),
         "w" => (false, true),
         "rw" | "wr" => (true, true),
-        _ => {
-            return Object::Error(format!(
-                "second argument to 'file' must be 'String'. got '{}'.",
-                arguments[0].get_type()
-            ));
-        }
+        _ => return Object::Error(format!("invalid option argument. got '{option}'.")),
     };
 
     let file = OpenOptions::new()
@@ -372,14 +367,10 @@ fn read(arguments: &[Object]) -> Object {
     let mut buffer = String::new();
     let result = file.borrow_mut().read_to_string(&mut buffer);
 
-    if let Err(error) = result {
-        return Object::Error(error.to_string());
-    }
-
-    Object::String(buffer)
+    result.map_or_else(|e| Object::Error(e.to_string()), |_| Object::String(buffer))
 }
 
-fn write(arguments: &[Object]) -> Object {
+fn writeln(arguments: &[Object]) -> Object {
     if arguments.len() != 2 {
         return Object::Error(format!(
             "wrong number of arguments. got={}, want=2.",
@@ -401,7 +392,10 @@ fn write(arguments: &[Object]) -> Object {
         ));
     };
 
-    let result = file.borrow_mut().write_all(to_write.as_bytes());
+    let to_write_result = file.borrow_mut().write_all(to_write.as_bytes());
+    let new_line_result = file.borrow_mut().write_all(b"\n");
 
-    result.map_or_else(|error| Object::Error(error.to_string()), |()| Object::Null)
+    let result =
+        to_write_result.map_or_else(|error| Object::Error(error.to_string()), |()| Object::Null);
+    new_line_result.map_or_else(|error| Object::Error(error.to_string()), |()| result)
 }

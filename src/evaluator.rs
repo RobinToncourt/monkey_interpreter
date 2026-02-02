@@ -40,6 +40,12 @@ fn eval_statement(statement: &Statement, env: &SharedEnv) -> Object {
     match statement {
         Statement::Let { name, expression } => eval_let_statement(name, expression, env),
         Statement::Return { return_expression } => eval_return_statement(return_expression, env),
+        Statement::For {
+            initializer,
+            condition,
+            step,
+            body,
+        } => eval_for_statement(initializer, condition, step, body, env),
         Statement::Expression(expression) => eval_expression(expression, env),
         Statement::Block(statements) => eval_block_statement(statements, env),
     }
@@ -61,6 +67,75 @@ fn eval_return_statement(return_expression: &Expression, env: &SharedEnv) -> Obj
     }
 
     Object::ReturnValue(Box::new(return_value))
+}
+
+fn eval_for_statement(
+    initializer: &Statement,
+    condition: &Expression,
+    step: &Statement,
+    body: &Statement,
+    env: &SharedEnv,
+) -> Object {
+    let loop_env = Rc::new(RefCell::new(Environment::new_enclosed(env.clone())));
+
+    let init_result = eval_statement(initializer, &loop_env);
+    if init_result.is_error() {
+        return init_result;
+    }
+
+    let cond_result = eval_expression(condition, &loop_env);
+    if cond_result.is_error() {
+        return cond_result;
+    }
+
+    let Object::Boolean(mut cond_result) = cond_result else {
+        return Object::Error(format!(
+            "condition does not evaluate to Boolean, got: '{}'.",
+            cond_result.get_type()
+        ));
+    };
+
+    while cond_result {
+        /*
+         * Loop body.
+         */
+        let body_result = eval_statement(body, &loop_env);
+        if body_result.is_error() {
+            return body_result;
+        }
+
+        if let Object::ReturnValue(return_value) = body_result {
+            return *return_value;
+        }
+
+        /*
+         * Loop step.
+         */
+        let step_result = eval_statement(step, &loop_env);
+        if step_result.is_error() {
+            return step_result;
+        }
+
+        /*
+         * Loop condition.
+         */
+        let cond_object_result = eval_expression(condition, &loop_env);
+        if cond_object_result.is_error() {
+            return cond_object_result;
+        }
+
+        cond_result = match cond_object_result {
+            Object::Boolean(cond_result) => cond_result,
+            _ => {
+                return Object::Error(format!(
+                    "condition does not evaluate to Boolean, got: '{}'.",
+                    cond_object_result.get_type()
+                ));
+            }
+        };
+    }
+
+    Object::Null
 }
 
 fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
@@ -131,6 +206,7 @@ fn eval_expression(expression: &Expression, env: &SharedEnv) -> Object {
             function,
             arguments,
         } => eval_call_expression(function, arguments, env),
+        Expression::Assign { name, expression } => eval_assign_expression(name, expression, env),
     }
 }
 
@@ -324,6 +400,17 @@ fn eval_call_expression(
     };
 
     apply_function(function, &arguments)
+}
+
+fn eval_assign_expression(name: &str, expression: &Expression, env: &SharedEnv) -> Object {
+    let value = eval_expression(expression, env);
+
+    if env.borrow().contains(name) {
+        env.borrow_mut().set(name.to_owned(), value.clone());
+        value
+    } else {
+        Object::Error(format!("identifier not found: {name}"))
+    }
 }
 
 #[allow(clippy::unnecessary_wraps)]
